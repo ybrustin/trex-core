@@ -20,6 +20,7 @@ limitations under the License.
 #include <queue>
 #include <vector>
 #include <string>
+#include <unordered_map>
 
 
 #define TREX_MAX_PORTS 16
@@ -76,5 +77,7 @@ typedef std::vector<cpu_vct_st> cpu_util_full_t;
 typedef std::vector<std::string> xstats_names_t;
 typedef std::vector<uint64_t> xstats_values_t;
 typedef std::vector<uint32_t> supp_speeds_t;
+typedef std::unordered_map<uint32_t,std::string> capwap_map_t;
+typedef capwap_map_t::const_iterator capwap_map_it_t;
 
 #endif

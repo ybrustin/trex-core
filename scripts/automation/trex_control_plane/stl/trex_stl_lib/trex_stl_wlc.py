@@ -997,7 +997,104 @@ class AP_Manager:
             self.trex_client.logger.post_cmd(True)
 
 
+    @staticmethod
+    def _set_proxy_mode(port, params):
+        params.update({
+            'handler': port.handler,
+            'port_id': port.port_id,
+            'type': 'capwap_proxy',
+            })
+        rc = port.transmit('set_rx_feature', params)
+        if not rc:
+            raise Exception(rc.err())
+
+
+    def enable_proxy_mode(self, wired_port, wireless_port):
+        assert wired_port in self.service_ctx, 'Specified wired port %s does not have any APs' % wired_port
+        assert wireless_port in self.trex_client.ports, 'Specified wireless port %s is invalid' % wireless_port
+        assert wireless_port not in self.service_ctx, 'Specified wireless port %s should not have any APs' % wireless_port
+        clients = [c for c in self.clients if (c.ap.port_id == wired_port and c.ap.is_connected and c.is_associated)]
+        assert clients, 'Specified wired port %s does not have any connected clients' % wired_port
+
+        # wireless side
+        port = self.trex_client.ports[wireless_port]
+        assert port.is_acquired(), 'Port of "wireless" side is not acquired!'
+        assert port.is_resolved(), 'Port destination is not resolved!'
+        wireless_src_mac = port.get_layer_cfg()['ether']['src']
+        wireless_dst_mac = port.get_layer_cfg()['ether']['dst']
+
+        capwap_map = {}
+        ip_layer = IP()
+        for client in clients:
+            wlan_wrapping = client.ap.wrap_pkt_by_wlan(client, Ether(src = client.mac, dst = client.ap.mac_dst)/ip_layer)[:-len(ip_layer)]
+            #Ether(wlan_wrapping).show2()
+            capwap_map[client.ip] = base64encode(wlan_wrapping)
+
+        params = {
+            'enabled': True,
+            'pair_port_id': wired_port,
+            'is_wireless_side': True,
+            'capwap_map': capwap_map,
+            }
+        self._set_proxy_mode(port, params)
+
+        # wired side
+        port = self.trex_client.ports[wired_port]
+        capwap_map = {}
+        for client in clients:
+            assert client.ap.mac_dst
+            ether_wrapping = Ether(src = wireless_src_mac, dst = wireless_dst_mac, type = 0x0800)
+            #ether_wrapping.show2()
+            capwap_map[client.ip] = base64encode(bytes(ether_wrapping))
+
+        params = {
+            'enabled': True,
+            'pair_port_id': wireless_port,
+            'is_wireless_side': False,
+            'capwap_map': capwap_map,
+            }
+        self._set_proxy_mode(port, params)
+
+
+    def disable_proxy_mode(self, ports = None, ignore_errors = False):
+        if ports is None:
+            ports = list(self.trex_client.ports.keys())
+        else:
+            ports = listify(ports)
+        for port_id in ports:
+            try:
+                assert port_id in self.trex_client.ports, 'Invalid port id: %s' % port_id
+                params = {'enabled': False}
+                self._set_proxy_mode(self.trex_client.ports[port_id], params)
+            except:
+                if not ignore_errors:
+                    raise
+
+
+    def get_proxy_stats(self, ports = None, decode_map = True):
+        if ports is None:
+            ports = list(self.trex_client.ports.keys())
+        else:
+            ports = listify(ports)
+        per_port_info = {}
+        for port_id in ports:
+            port = self.trex_client.ports[port_id]
+            port.sync()
+            capwap_proxy_info = port.status['rx_info'].get('capwap_proxy')
+            if capwap_proxy_info and decode_map and capwap_proxy_info['is_active']:
+                capwap_map_base64 = capwap_proxy_info['capwap_map']
+                if capwap_map_base64:
+                    capwap_map = {}
+                    del capwap_proxy_info['capwap_map']
+                    for client_ip, wrapping in capwap_map_base64.items():
+                        capwap_map[client_ip] = Ether(base64decode(wrapping)).command()
+                    capwap_proxy_info['capwap_map'] = capwap_map
+            per_port_info[port_id] = capwap_proxy_info
+        return per_port_info
+
+
     def __del__(self):
+        self.disable_proxy_mode(ignore_errors = True)
         self.close()
 
 

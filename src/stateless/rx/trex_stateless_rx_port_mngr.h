@@ -24,7 +24,7 @@
 
 #include <stdint.h>
 #include "common/base64.h"
-
+#include "bpf_api.h"
 #include "trex_stateless_pkt.h"
 #include "trex_stateless_rx_feature_api.h"
 
@@ -140,13 +140,51 @@ public:
     
     void create(RXFeatureAPI *api);
     void handle_pkt(const rte_mbuf_t *m);
-    
+
 private:
     void handle_icmp(RXPktParser &parser);
     void handle_arp(RXPktParser &parser);
-    rte_mbuf_t *duplicate_mbuf(const rte_mbuf_t *m);
-    
+
     RXFeatureAPI *m_api;
+};
+
+/**************************************
+ * CAPWAP proxy for stateful.
+ * Can be either:
+ *      "wireless" side (coming from clients side, need to add CAPWAP)
+ *      "wired" side (coming from WLC side, need to strip CAPWAP)
+ *************************************/
+class RXCapwapProxy {
+public:
+
+    void create(RXFeatureAPI *api);
+    bool set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map);
+    void clear_map() {
+        m_capwap_map.clear();
+    }
+    void handle_pkt(rte_mbuf_t *m);
+    void handle_wired(rte_mbuf_t *m);
+    void handle_wireless(rte_mbuf_t *m);
+
+    Json::Value to_json() const;
+
+private:
+    RXFeatureAPI        *m_api;
+    uint8_t              m_pair_port_id;
+    bool                 m_is_wireless_side;
+    capwap_map_t         m_capwap_map;
+    capwap_map_it_t      m_capwap_map_it;
+    uint64_t             m_errs = 0;
+    std::string          m_last_err = "";
+    char                *m_pkt_data_ptr;
+    uint16_t             m_rx_pkt_size;
+    uint16_t             m_new_ip_length;
+    bpf_h                m_wired_bpf_filter;
+    int                  rc;
+    EthernetHeader      *m_ether;
+    IPHeader            *m_ipv4;
+    uint32_t             m_client_ip_num;
+    rte_mbuf_t          *m_mbuf_ptr;
 };
 
 /**************************************
@@ -188,16 +226,18 @@ class RXPortManager {
     
 public:
     enum feature_t {
-        NO_FEATURES  = 0x0,
-        LATENCY      = 0x1,
-        QUEUE        = 0x4,
-        SERVER       = 0x8,
-        GRAT_ARP     = 0x10,
+        NO_FEATURES  = 0,
+        LATENCY      = 1,
+        QUEUE        = 1 << 1,
+        SERVER       = 1 << 2,
+        GRAT_ARP     = 1 << 3,
+        CAPWAP_PROXY = 1 << 4,
     };
 
     RXPortManager();
 
-    void create(const TRexPortAttr *port_attr,
+    void create(CRxCoreStateless *rx_stl_core,
+                const TRexPortAttr *port_attr,
                 CPortLatencyHWBase *io,
                 CRFC2544Info *rfc2544,
                 CRxCoreErrCntrs *err_cntrs,
@@ -254,6 +294,16 @@ public:
     
     void stop_grat_arp() {
         unset_feature(GRAT_ARP);
+    }
+
+    void start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
+        m_capwap_proxy.set_values(pair_port_id, is_wireless_side, capwap_map);
+        set_feature(CAPWAP_PROXY);
+    }
+
+    void stop_capwap_proxy() {
+        m_capwap_proxy.clear_map();
+        unset_feature(CAPWAP_PROXY);
     }
 
     /**
@@ -354,9 +404,11 @@ private:
   
     uint32_t                     m_features;
     uint8_t                      m_port_id;
+    CRxCoreStateless            *m_rx_stl_core;
     RXLatency                    m_latency;
     RXQueue                      m_queue;
     RXServer                     m_server;
+    RXCapwapProxy                m_capwap_proxy;
     RXGratARP                    m_grat_arp;
     
     CCpuUtlDpPredict             m_cpu_pred;

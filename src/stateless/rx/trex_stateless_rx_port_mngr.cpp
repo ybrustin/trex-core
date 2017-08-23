@@ -286,7 +286,7 @@ public:
         m_mbuf = m;
         
         /* start point */
-        m_current   = rte_pktmbuf_mtod(m, uint8_t *);;
+        m_current   = rte_pktmbuf_mtod(m, uint8_t *);
         m_size_left = rte_pktmbuf_pkt_len(m);
         
         m_ether    = NULL;
@@ -401,7 +401,6 @@ protected:
 };
 
 
-
 RXServer::RXServer() {
     m_api = NULL;
 }
@@ -452,7 +451,7 @@ RXServer::handle_icmp(RXPktParser &parser) {
     }
     
     /* duplicate the MBUF */
-    rte_mbuf_t *response = duplicate_mbuf(parser.m_mbuf);
+    rte_mbuf_t *response = duplicate_mbuf(parser.m_mbuf, m_api->get_port_id());
     if (!response) {
         return;
     }
@@ -508,7 +507,7 @@ RXServer::handle_arp(RXPktParser &parser) {
     }
     
     /* duplicate the MBUF */
-    rte_mbuf_t *response = duplicate_mbuf(parser.m_mbuf);
+    rte_mbuf_t *response = duplicate_mbuf(parser.m_mbuf, m_api->get_port_id());
     if (!response) {
         return;
     }
@@ -540,21 +539,177 @@ RXServer::handle_arp(RXPktParser &parser) {
     }
 }
 
-rte_mbuf_t *
-RXServer::duplicate_mbuf(const rte_mbuf_t *m) {
-    
-    /* allocate */
-    rte_mbuf_t *clone_mbuf = CGlobalInfo::pktmbuf_alloc_by_port(m_api->get_port_id(), rte_pktmbuf_pkt_len(m));
-    assert(clone_mbuf);
-    
-    /* append data - should always succeed */
-    uint8_t *dest = (uint8_t *)rte_pktmbuf_append(clone_mbuf, rte_pktmbuf_pkt_len(m));
-    assert(dest);
-    
-    /* copy data */
-    mbuf_to_buffer(dest, m);
-    
-    return clone_mbuf;
+
+/**************************************
+ * CAPWAP proxy
+ * 
+ *************************************/
+
+#ifndef WLAN_IP_OFFSET
+#define WLAN_IP_OFFSET 84
+#endif
+
+
+void RXCapwapProxy::create(RXFeatureAPI *api) {
+    m_api = api;
+    m_wired_bpf_filter = bpfjit_compile("ip and udp src port 5247 and udp[48:2] == 2048");
+}
+
+
+bool RXCapwapProxy::set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
+    m_is_wireless_side = is_wireless_side;
+    m_pair_port_id = pair_port_id;
+    m_capwap_map.clear();
+    std::string wrap_data;
+
+    for (const std::string &client_ip_str : capwap_map.getMemberNames()) {
+        wrap_data = base64_decode(capwap_map[client_ip_str].asString());
+        std::cout << "Got: " << client_ip_str << std::endl;
+        rc = utl_ipv4_to_uint32(client_ip_str.c_str(), m_client_ip_num);
+        std::cout << "Int: " << m_client_ip_num << std::endl;
+        if ( !rc ) {
+            std::stringstream ss;
+            ss << "Could not convert IP string \"" << client_ip_str << "\"to uint32_t!";
+            throw TrexException(ss.str());
+        }
+        m_capwap_map[m_client_ip_num] = wrap_data;
+    }
+    return true;
+}
+
+
+Json::Value
+RXCapwapProxy::to_json() const {
+    Json::Value output = Json::objectValue;
+    std::string client_ip, encoded_pkt;
+
+    Json::Value capwap_map_json = Json::objectValue;
+    for (auto& x: m_capwap_map) {
+        client_ip = utl_uint32_to_ipv4(x.first);
+        encoded_pkt = base64_encode((unsigned char *) x.second.c_str(), x.second.size());
+        capwap_map_json[client_ip] = encoded_pkt;
+    }
+    output["capwap_map"] = capwap_map_json;
+    output["is_wireless_side"] = m_is_wireless_side;
+    output["pair_port_id"] = m_pair_port_id;
+    output["errors"] = Json::UInt64(m_errs);
+    output["last_error"] = m_last_err;
+
+    return output;
+}
+
+
+// send to pair port after stripping or adding CAPWAP info
+void
+RXCapwapProxy::handle_pkt(rte_mbuf_t *m) {
+    try {
+
+        if ( m_is_wireless_side ) {
+            handle_wireless(m);
+        } else {
+            handle_wired((rte_mbuf_t *) m);
+        }
+
+    } catch (std::exception &e) {
+        m_errs++;
+        m_last_err = e.what();
+    }
+}
+
+
+/*
+No checks of AP and client MAC!
+*/
+void
+RXCapwapProxy::handle_wired(rte_mbuf_t *m) {
+    m_rx_pkt_size = rte_pktmbuf_pkt_len(m);
+    if ( unlikely(m_rx_pkt_size < WLAN_IP_OFFSET + ETH_HDR_LEN + IPV4_HDR_LEN) ) { // not accurate but sufficient
+        return;
+    }
+    m_pkt_data_ptr = rte_pktmbuf_mtod(m, char *);
+
+    // verify capwap + wlan
+    rc = bpfjit_run(m_wired_bpf_filter, m_pkt_data_ptr, m_rx_pkt_size);
+    if ( unlikely(!rc) ) {
+        return;
+    }
+
+    // get dst IP
+    m_ipv4 = (IPHeader *)(m_pkt_data_ptr + WLAN_IP_OFFSET);
+    m_client_ip_num = m_ipv4->getDestIp();
+    m_capwap_map_it = m_capwap_map.find(m_client_ip_num);
+    if ( unlikely(m_capwap_map_it == m_capwap_map.end()) ) {
+        //printf("Wired: %u not found in map\n", m_client_ip_num);
+        return;
+    }
+
+    // removing capwap+wlan and adding ether
+    rte_pktmbuf_adj(m, (WLAN_IP_OFFSET - ETH_HDR_LEN));
+    memcpy(m_pkt_data_ptr + WLAN_IP_OFFSET - ETH_HDR_LEN, m_capwap_map_it->second.c_str(), m_capwap_map_it->second.size());
+
+    rc = m_api->tx_pkt(m, m_pair_port_id);
+    if ( unlikely(!rc) ) {
+        throw TrexException("Could not send packet!");
+    }
+}
+
+
+/*
+No checks of client MAC!
+*/
+void
+RXCapwapProxy::handle_wireless(rte_mbuf_t *m) {
+    m_rx_pkt_size = rte_pktmbuf_pkt_len(m);
+    if ( unlikely(m_rx_pkt_size < ETH_HDR_LEN + IPV4_HDR_LEN) ) {
+        return;
+    }
+    m_pkt_data_ptr = rte_pktmbuf_mtod(m, char *);
+
+    // verify IP layer
+    m_ether = (EthernetHeader *)m_pkt_data_ptr;
+    if ( unlikely(m_ether->getNextProtocol() != EthernetHeader::Protocol::IP) ) {
+        return;
+    }
+
+    // get src IP
+    m_ipv4 = (IPHeader *)(m_pkt_data_ptr + ETH_HDR_LEN);
+    m_client_ip_num = m_ipv4->getSourceIp();
+    m_capwap_map_it = m_capwap_map.find(m_client_ip_num);
+    if ( unlikely(m_capwap_map_it == m_capwap_map.end()) ) {
+        //printf("Wireless: %u not found in map\n", m_client_ip_num);
+        return;
+    }
+
+    if ( unlikely(m_rx_pkt_size > MAX_PKT_ALIGN_BUF_9K - (m_capwap_map_it->second.size() - ETH_HDR_LEN)) ) {
+        throw TrexException("Too large packet!");
+    }
+
+    m_new_ip_length = m_rx_pkt_size + m_capwap_map_it->second.size() - ETH_HDR_LEN - ETH_HDR_LEN; //adding capwap+wlan and removing ether
+
+    // Fix IP total length and checksum
+    m_ipv4 = (IPHeader *)(m_capwap_map_it->second.c_str() + ETH_HDR_LEN);
+    m_ipv4->updateTotalLength(m_new_ip_length);
+
+    // Update UDP length
+    UDPHeader *udp = (UDPHeader *)(m_capwap_map_it->second.c_str() + ETH_HDR_LEN + IPV4_HDR_LEN);
+    udp->setLength(m_new_ip_length - IPV4_HDR_LEN);
+
+    // allocate new mbuf and chain it to received one
+    m_mbuf_ptr = CGlobalInfo::pktmbuf_alloc_by_port(m_pair_port_id, m_capwap_map_it->second.size());
+    memcpy(rte_pktmbuf_mtod(m_mbuf_ptr, char *), m_capwap_map_it->second.c_str(), m_capwap_map_it->second.size());
+
+    rte_pktmbuf_adj(m, ETH_HDR_LEN);
+    m_mbuf_ptr->next = m;
+    m_mbuf_ptr->data_len = m_capwap_map_it->second.size();
+    m_mbuf_ptr->pkt_len = m_mbuf_ptr->data_len + m->pkt_len;
+    m_mbuf_ptr->nb_segs = m->nb_segs + 1;
+    m->pkt_len = m->data_len;
+
+    rc = m_api->tx_pkt(m_mbuf_ptr, m_pair_port_id);
+    if ( unlikely(!rc) ) {
+        rte_pktmbuf_free(m_mbuf_ptr);
+        throw TrexException("Could not send packet!");
+    }
 }
 
 
@@ -640,7 +795,8 @@ RXPortManager::RXPortManager() : m_feature_api(this) {
 
 
 void
-RXPortManager::create(const TRexPortAttr *port_attr,
+RXPortManager::create(CRxCoreStateless *rx_stl_core,
+                      const TRexPortAttr *port_attr,
                       CPortLatencyHWBase *io,
                       CRFC2544Info *rfc2544,
                       CRxCoreErrCntrs *err_cntrs,
@@ -648,6 +804,7 @@ RXPortManager::create(const TRexPortAttr *port_attr,
     
     m_port_id = port_attr->get_port_id();
     m_io = io;
+    m_rx_stl_core = rx_stl_core;
 
     /* create a predicator for CPU util. */
     m_cpu_pred.create(cpu_util);
@@ -656,6 +813,7 @@ RXPortManager::create(const TRexPortAttr *port_attr,
     m_latency.create(rfc2544, err_cntrs);
 
     m_server.create(&m_feature_api);
+    m_capwap_proxy.create(&m_feature_api);
     m_grat_arp.create(&m_feature_api, &m_ign_stats);
     
     /* by default, server is always on */
@@ -677,9 +835,14 @@ void RXPortManager::handle_pkt(const rte_mbuf_t *m) {
     if (is_feature_set(SERVER)) {
         m_server.handle_pkt(m);
     }
-    
+
     /* capture */
     TrexStatelessCaptureMngr::getInstance().handle_pkt_rx(m, m_port_id);
+
+    if (is_feature_set(CAPWAP_PROXY)) { // changes the mbuf, so need to be last
+        m_capwap_proxy.handle_pkt((rte_mbuf_t *) m);
+    }
+
 }
 
 int RXPortManager::process_all_pending_pkts(bool flush_rx) {
@@ -811,7 +974,14 @@ RXPortManager::to_json() const {
     } else {
         output["grat_arp"]["is_active"] = false;
     }
-    
+
+    if (is_feature_set(CAPWAP_PROXY)) {
+        output["capwap_proxy"] = m_capwap_proxy.to_json();
+        output["capwap_proxy"]["is_active"] = true;
+    } else {
+        output["capwap_proxy"]["is_active"] = false;
+    }
+
     return output;
 }
 
@@ -842,6 +1012,15 @@ RXFeatureAPI::tx_pkt(rte_mbuf_t *m) {
     return m_port_mngr->tx_pkt(m);
 }
 
+bool
+RXFeatureAPI::tx_pkt(const std::string &pkt, uint8_t tx_port_id) {
+    return m_port_mngr->m_rx_stl_core->tx_pkt(pkt, tx_port_id);
+}
+
+bool
+RXFeatureAPI::tx_pkt(rte_mbuf_t *m, uint8_t tx_port_id) {
+    return m_port_mngr->m_rx_stl_core->tx_pkt(m, tx_port_id);
+}
 
 uint8_t
 RXFeatureAPI::get_port_id() {

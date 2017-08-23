@@ -154,6 +154,7 @@ TREX_RPC_CMD_DEFINE(TrexRpcCmdShutdown, "shutdown", 2, false, APIClass::API_CLAS
 TREX_RPC_CMD_DEFINE_EXTENDED(TrexRpcCmdSetRxFeature, "set_rx_feature", 3, true, APIClass::API_CLASS_TYPE_CORE,
     void parse_queue_msg(const Json::Value &msg,  TrexStatelessPort *port, Json::Value &result);
     void parse_server_msg(const Json::Value &msg, TrexStatelessPort *port, Json::Value &result);
+    void parse_capwap_proxy_msg(const Json::Value &msg,  TrexStatelessPort *port, Json::Value &result);
 
 );
 

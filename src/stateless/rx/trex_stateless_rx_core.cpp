@@ -88,7 +88,8 @@ void CRxCoreStateless::create(const CRxSlCfg &cfg) {
     /* create per port manager */
     for (int i = 0; i < m_max_ports; i++) {
         const TRexPortAttr *port_attr = get_stateless_obj()->get_platform_api()->getPortAttrObj(i);
-        m_rx_port_mngr[i].create(port_attr,
+        m_rx_port_mngr[i].create(this,
+                                 port_attr,
                                  cfg.m_ports[i],
                                  m_rfc2544,
                                  &m_err_cntrs,
@@ -142,7 +143,7 @@ void CRxCoreStateless::recalculate_next_state() {
     }
 
     /* only latency requires the 'hot' state */
-    m_state = (is_latency_or_capture_active() ? STATE_HOT : STATE_COLD);
+    m_state = (should_be_hot() ? STATE_HOT : STATE_COLD);
 }
 
 
@@ -160,12 +161,14 @@ bool CRxCoreStateless::is_latency_active() {
 }
 
 /**
- * return true if latency or capture is active
+ * return true if features requiring quick response are enabled
+ * (latency, capture, capwap proxy)
  */
-bool CRxCoreStateless::is_latency_or_capture_active() {
+bool CRxCoreStateless::should_be_hot() {
     for (int i = 0; i < m_max_ports; i++) {
         if ( TrexStatelessCaptureMngr::getInstance().is_active(i)
-            || m_rx_port_mngr[i].is_feature_set(RXPortManager::LATENCY ) ) {
+            || m_rx_port_mngr[i].is_feature_set(RXPortManager::LATENCY)
+            || m_rx_port_mngr[i].is_feature_set(RXPortManager::CAPWAP_PROXY) ) {
             return true;
         }
     }
@@ -286,6 +289,24 @@ void CRxCoreStateless::handle_grat_arp() {
 }
 
 
+bool CRxCoreStateless::tx_pkt(rte_mbuf_t *m, uint8_t tx_port_id) {
+    if ( tx_port_id < m_max_ports ) {
+        return m_rx_port_mngr[tx_port_id].tx_pkt(m);
+    } else {
+        return false;
+    }
+}
+
+
+bool CRxCoreStateless::tx_pkt(const std::string &pkt, uint8_t tx_port_id) {
+    if ( tx_port_id < m_max_ports ) {
+        return m_rx_port_mngr[tx_port_id].tx_pkt(pkt);
+    } else {
+        return false;
+    }
+}
+
+
 void CRxCoreStateless::start() {
     /* register a watchdog handle on current core */
     m_monitor.create("STL RX CORE", 1);
@@ -394,6 +415,18 @@ CRxCoreStateless::start_queue(uint8_t port_id, uint64_t size) {
 void
 CRxCoreStateless::stop_queue(uint8_t port_id) {
     m_rx_port_mngr[port_id].stop_queue();
+    recalculate_next_state();
+}
+
+void
+CRxCoreStateless::start_capwap_proxy(uint8_t port_id, uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
+    m_rx_port_mngr[port_id].start_capwap_proxy(pair_port_id, is_wireless_side, capwap_map);
+    recalculate_next_state();
+}
+
+void
+CRxCoreStateless::stop_capwap_proxy(uint8_t port_id) {
+    m_rx_port_mngr[port_id].stop_capwap_proxy();
     recalculate_next_state();
 }
 

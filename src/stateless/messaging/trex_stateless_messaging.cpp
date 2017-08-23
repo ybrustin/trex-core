@@ -364,6 +364,35 @@ TrexStatelessRxStopQueue::handle(CRxCoreStateless *rx_core) {
 }
 
 
+bool
+TrexStatelessRxStartCapwapProxy::handle(CRxCoreStateless *rx_core) {
+
+    if (rx_core->get_rx_port_mngr(m_port_id).is_feature_set(RXPortManager::CAPWAP_PROXY)) {
+        m_reply.set_reply(RC_FAIL_CAPWAP_PROXY_ACTIVE);
+
+    } else {
+        rx_core->start_capwap_proxy(m_port_id, m_pair_port_id, m_is_wireless_side, m_capwap_map);
+        m_reply.set_reply(RC_OK);
+    }
+
+    return true;
+}
+
+
+bool
+TrexStatelessRxStopCapwapProxy::handle(CRxCoreStateless *rx_core) {
+
+    if (rx_core->get_rx_port_mngr(m_port_id).is_feature_set(RXPortManager::CAPWAP_PROXY)) {
+        rx_core->stop_capwap_proxy(m_port_id);
+        m_reply.set_reply(RC_OK);
+
+    } else {
+        m_reply.set_reply(RC_FAIL_CAPWAP_PROXY_INACTIVE);
+    }
+
+    return true;
+}
+
 
 bool
 TrexStatelessRxQueueGetPkts::handle(CRxCoreStateless *rx_core) {
@@ -418,7 +447,13 @@ TrexStatelessRxQuery::handle(CRxCoreStateless *rx_core) {
             rc = RC_FAIL_RX_QUEUE_ACTIVE;
             break;
         }
-        
+
+        /* cannot leave service mode if CAPWAP proxy is active */
+        if (rx_core->get_rx_port_mngr(m_port_id).is_feature_set(RXPortManager::CAPWAP_PROXY)) {
+            rc = RC_FAIL_CAPWAP_PROXY_ACTIVE;
+            break;
+        }
+
         /* cannot leave service mode if PCAP capturing is active */
         if (TrexStatelessCaptureMngr::getInstance().is_active(m_port_id)) {
             rc = RC_FAIL_CAPTURE_ACTIVE;

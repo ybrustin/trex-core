@@ -77,6 +77,18 @@ class WLC_Plugin(ConsolePlugin):
         self.add_argument('--load', action = 'store_true',
                 dest = 'base_load',
                 help = 'Load saved AP and Client base values.')
+        self.add_argument('-l', '--lan', '--wired', type = int,
+                dest = 'proxy_wired_port',
+                help = 'Wired side of proxy (connected to WLC).')
+        self.add_argument('-w', '--wlan', '--wireless', type = int,
+                dest = 'proxy_wireless_port',
+                help = 'Wireless side of proxy (connected to Stateful TRex).')
+        self.add_argument('--disable', action = 'store_true',
+                dest = 'proxy_disable',
+                help = 'Disable the proxy (enable if not specified).')
+        self.add_argument('--clear', action = 'store_true',
+                dest = 'proxy_clear',
+                help = 'Remove all proxy configurations.')
 
 
     def plugin_unload(self):
@@ -117,7 +129,10 @@ class WLC_Plugin(ConsolePlugin):
         categories = ['Port', 'AP(s) info', 'Client(s) info']
         ap_client_info_table.header([bold(c) for c in categories])
         for port_id in sorted(info.keys()):
+            proxy_status = self.ap_manager.get_proxy_stats(ports = [port_id], decode_map = False)[port_id]
             port_info = '%s\nBG thread: %s' % (port_id, 'alive' if info[port_id]['bg_thread_alive'] else bold('dead'))
+            if proxy_status and proxy_status['is_active']:
+                port_info += '\nProxy port %s' % proxy_status['pair_port_id']
             ap_arr = []
             client_arr = []
             name_per_num = {}

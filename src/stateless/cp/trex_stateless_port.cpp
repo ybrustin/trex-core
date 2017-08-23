@@ -1006,7 +1006,10 @@ TrexStatelessPort::set_service_mode(bool enabled) {
         
     case TrexStatelessRxQuery::RC_FAIL_RX_QUEUE_ACTIVE:
         throw TrexException("unable to disable service mode - please remove RX queue");
-        
+
+    case TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_ACTIVE:
+        throw TrexException("unable to disable service mode - please remove CAPWAP proxy");
+
     case TrexStatelessRxQuery::RC_FAIL_CAPTURE_ACTIVE:
         throw TrexException("unable to disable service mode - an active capture on port " + std::to_string(m_port_id) + " exists");
         
@@ -1038,6 +1041,44 @@ void
 TrexStatelessPort::stop_rx_queue() {
     TrexStatelessCpToRxMsgBase *msg = new TrexStatelessRxStopQueue(m_port_id);
     send_message_to_rx(msg);
+}
+
+
+void 
+TrexStatelessPort::start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_side, const Json::Value &capwap_map) {
+    static MsgReply<TrexStatelessRxQuery::query_rc_e> reply;
+
+    reply.reset();
+    TrexStatelessRxStartCapwapProxy *msg = new TrexStatelessRxStartCapwapProxy(m_port_id, pair_port_id, is_wireless_side, capwap_map, reply);
+    
+    send_message_to_rx( (TrexStatelessCpToRxMsgBase *)msg );
+
+    TrexStatelessRxQuery::query_rc_e rc = reply.wait_for_reply();
+    
+    if (rc == TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_ACTIVE) {
+        std::stringstream ss;
+        ss << "CAPWAP proxy mode is already active at port " << std::to_string(m_port_id) << " !";
+        throw TrexException(ss.str());
+    }
+
+}
+
+
+void
+TrexStatelessPort::stop_capwap_proxy() {
+    static MsgReply<TrexStatelessRxQuery::query_rc_e> reply;
+
+    reply.reset();
+    TrexStatelessRxStopCapwapProxy *msg = new TrexStatelessRxStopCapwapProxy(m_port_id, reply);
+
+    send_message_to_rx(msg);
+    TrexStatelessRxQuery::query_rc_e rc = reply.wait_for_reply();
+
+    if (rc == TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_INACTIVE) {
+        std::stringstream ss;
+        ss << "CAPWAP proxy mode is not active at port " << std::to_string(m_port_id) << " !";
+        throw TrexException(ss.str());
+    }
 }
 
 

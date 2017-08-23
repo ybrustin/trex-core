@@ -707,7 +707,7 @@ private:
 };
 
 
-class TrexStatelessRxQuery : public TrexStatelessCpToRxMsgBase {
+class TrexStatelessCpToRxEnumedMsg : public TrexStatelessCpToRxMsgBase {
 public:
 
     /**
@@ -725,8 +725,18 @@ public:
         RC_OK,
         RC_FAIL_RX_QUEUE_ACTIVE,
         RC_FAIL_CAPTURE_ACTIVE,
+        RC_FAIL_CAPWAP_PROXY_ACTIVE,
+        RC_FAIL_CAPWAP_PROXY_INACTIVE,
     };
-    
+
+protected:
+    uint8_t                m_port_id;
+};
+
+
+class TrexStatelessRxQuery : public TrexStatelessCpToRxEnumedMsg {
+public:
+
     TrexStatelessRxQuery(uint8_t port_id, query_type_e query_type, MsgReply<query_rc_e> &reply) : m_reply(reply) {
         m_port_id    = port_id;
         m_query_type = query_type;
@@ -737,11 +747,48 @@ public:
      *
      */
     virtual bool handle(CRxCoreStateless *rx_core);
-    
+
 private:
-    uint8_t                m_port_id;
-    query_type_e           m_query_type;
     MsgReply<query_rc_e>  &m_reply;
+    query_type_e           m_query_type;
+};
+
+
+class TrexStatelessRxStartCapwapProxy : public TrexStatelessCpToRxEnumedMsg {
+public:
+    TrexStatelessRxStartCapwapProxy(uint8_t port_id,
+                                    uint8_t pair_port_id,
+                                    bool is_wireless_side,
+                                    const Json::Value &capwap_map,
+                                    MsgReply<query_rc_e> &reply) : m_reply(reply) {
+
+        m_port_id = port_id;
+        m_pair_port_id = pair_port_id;
+        m_is_wireless_side = is_wireless_side;
+        m_capwap_map = capwap_map;
+    }
+
+     bool handle(CRxCoreStateless *rx_core);
+
+private:
+    MsgReply<query_rc_e>   &m_reply;
+    uint8_t                 m_pair_port_id;
+    bool                    m_is_wireless_side;
+    Json::Value             m_capwap_map;
+};
+
+
+class TrexStatelessRxStopCapwapProxy : public TrexStatelessCpToRxEnumedMsg {
+public:
+    TrexStatelessRxStopCapwapProxy(uint8_t port_id, MsgReply<query_rc_e> &reply) : m_reply(reply) {
+        m_port_id = port_id;
+    }
+
+    virtual bool handle(CRxCoreStateless *rx_core);
+
+private:
+    MsgReply<query_rc_e>   &m_reply;
+
 };
 
 

@@ -728,12 +728,14 @@ TrexRpcCmdSetRxFeature::_run(const Json::Value &params, Json::Value &result) {
     TrexStatelessPort *port = get_stateless_obj()->get_port_by_id(port_id);
 
     /* decide which feature is being set */
-    const std::string type = parse_choice(params, "type", {"queue", "server"}, result);
+    const std::string type = parse_choice(params, "type", {"queue", "server", "capwap_proxy"}, result);
 
     if (type == "queue") {
         parse_queue_msg(params, port, result);
     } else if (type == "server") {
         parse_server_msg(params, port, result);
+    } else if (type == "capwap_proxy") {
+        parse_capwap_proxy_msg(params, port, result);
     } else {
         assert(0);
     }
@@ -779,6 +781,33 @@ TrexRpcCmdSetRxFeature::parse_queue_msg(const Json::Value &msg, TrexStatelessPor
 
 void 
 TrexRpcCmdSetRxFeature::parse_server_msg(const Json::Value &msg, TrexStatelessPort *port, Json::Value &result) {
+}
+
+/**
+ * set capwap proxy on pair of ports (one for wireless side, another for wired)
+ * 
+ */
+void
+TrexRpcCmdSetRxFeature::parse_capwap_proxy_msg(const Json::Value &msg, TrexStatelessPort *port, Json::Value &result) {
+    bool enabled = parse_bool(msg, "enabled", result);
+
+    try {
+        if (enabled) {
+            if (!port->is_service_mode_on()) {
+                throw TrexException("Service mode must be enabled on port " + std::to_string(port->get_port_id()) + " for CAPWAP proxy");
+            }
+            uint8_t pair_port_id = parse_byte(msg, "pair_port_id", result);
+            bool is_wireless_side = parse_bool(msg, "is_wireless_side", result);
+            const Json::Value &capwap_map = parse_object(msg, "capwap_map", result);
+            port->start_capwap_proxy(pair_port_id, is_wireless_side, capwap_map);
+
+        } else {
+            port->stop_capwap_proxy();
+        }
+
+    } catch (TrexException &ex) {
+        generate_execute_err(result, ex.what());
+    }
 }
 
 

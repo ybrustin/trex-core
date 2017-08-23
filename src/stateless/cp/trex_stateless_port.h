@@ -388,6 +388,22 @@ public:
     void start_rx_queue(uint64_t limit);
 
     /**
+     * set the port to state of proxyifying traffic between STF TRex and WLC
+     * 
+     * @param
+     *      pair_port_id  - pair port to pass the traffic to
+     *      is_wireless_side - is port connected to STF TRex
+     */
+    void start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_side, const Json::Value &capwap_map);
+
+    /**
+     * stop proxyifying traffic between STF TRex and WLC
+     * 
+     */
+    void stop_capwap_proxy();
+
+
+    /**
      * stop RX queueing
      * 
      * @author imarom (11/7/2016)
