@@ -34,6 +34,12 @@ class CRFC2544Info;
 class CRxCoreErrCntrs;
 
 
+enum rx_pkt_action_t {
+    RX_PKT_NOOP,
+    RX_PKT_FREE,
+};
+
+
 /**************************************
  * RX feature latency
  * 
