@@ -77,10 +77,10 @@ class WLC_Plugin(ConsolePlugin):
         self.add_argument('--load', action = 'store_true',
                 dest = 'base_load',
                 help = 'Load saved AP and Client base values.')
-        self.add_argument('-l', '--lan', '--wired', type = int,
+        self.add_argument('--lan', '--wired', type = int,
                 dest = 'proxy_wired_port',
                 help = 'Wired side of proxy (connected to WLC).')
-        self.add_argument('-w', '--wlan', '--wireless', type = int,
+        self.add_argument('--wlan', '--wireless', type = int,
                 dest = 'proxy_wireless_port',
                 help = 'Wireless side of proxy (connected to Stateful TRex).')
         self.add_argument('--disable', action = 'store_true',
@@ -309,6 +309,43 @@ class WLC_Plugin(ConsolePlugin):
         '''Set base values of MAC, IP etc. for created AP/Client.\nWill be increased for each new device.'''
         self.ap_manager.set_base_values(ap_mac, ap_ip, ap_udp, ap_radio, client_mac, client_ip, base_save, base_load)
         self.show_base()
+
+
+    def do_proxy(self, proxy_wired_port, proxy_wireless_port, proxy_disable, proxy_clear):
+        '''Proxify traffic between wireless side (Stateful TRex) and wired side (WLC).'''
+        if proxy_clear:
+            self.ap_manager.disable_proxy_mode(ignore_errors = True)
+        elif any([proxy_wired_port, proxy_wireless_port]):
+            if proxy_wired_port is None:
+                raise Exception('Must specify wired port')
+            if proxy_wireless_port is None:
+                raise Exception('Must specify wireless port')
+            if proxy_disable:
+                self.ap_manager.disable_proxy_mode(ports = [proxy_wired_port, proxy_wireless_port])
+            else:
+                assert proxy_wireless_port in self.trex_client.ports, 'Invalid wireless port ID: %s' % proxy_wireless_port
+                port = self.trex_client.ports[proxy_wireless_port]
+                if not port.is_service_mode_on():
+                    port.set_service_mode(True)
+                self.ap_manager.enable_proxy_mode(wired_port = proxy_wired_port, wireless_port = proxy_wireless_port)
+        else:
+            proxy_table = text_tables.Texttable(max_width = 200)
+            categories = ['Port', 'Errors', 'Wrapping map per client']
+            proxy_table.header([bold(c) for c in categories])
+            proxy_table.set_cols_align(['l'] * len(categories))
+            proxy_table.set_deco(15)
+            for port_id in sorted(self.trex_client.get_acquired_ports()):
+                data = self.ap_manager.get_proxy_stats(ports = [port_id], decode_map = True)[port_id]
+                if not data or not data['is_active']:
+                    continue
+                row = ['ID: %s\n(%s)\nPair: %s' % (port_id, 'WLAN' if data['is_wireless_side'] else 'LAN', data['pair_port_id'])]
+                row.append('%s%s' % (data['errors'], ('\nLast error:\n%s' % data['last_error'] if data['last_error'] else '')))
+                mappings = []
+                for client_ip in sorted(list(data['capwap_map'].keys()), key = natural_sorted_key):
+                    mappings.append('%s: %s' % (client_ip, data['capwap_map'][client_ip][:100]))
+                row.append('\n'.join(mappings))
+                proxy_table.add_row(row)
+            self.ap_manager.log(proxy_table.draw())
 
 
 

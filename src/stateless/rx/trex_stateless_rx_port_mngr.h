@@ -23,6 +23,7 @@
 #define __TREX_STATELESS_RX_PORT_MNGR_H__
 
 #include <stdint.h>
+#include <unordered_map>
 #include "common/base64.h"
 #include "bpf_api.h"
 #include "trex_stateless_pkt.h"
@@ -159,12 +160,10 @@ public:
 
     void create(RXFeatureAPI *api);
     bool set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map);
-    void clear_map() {
-        m_capwap_map.clear();
-    }
-    void handle_pkt(rte_mbuf_t *m);
-    void handle_wired(rte_mbuf_t *m);
-    void handle_wireless(rte_mbuf_t *m);
+    void clear_map();
+    rx_pkt_action_t handle_pkt(rte_mbuf_t *m);
+    rx_pkt_action_t handle_wired(rte_mbuf_t *m);
+    rx_pkt_action_t handle_wireless(rte_mbuf_t *m);
 
     Json::Value to_json() const;
 
@@ -172,10 +171,6 @@ private:
     RXFeatureAPI        *m_api;
     uint8_t              m_pair_port_id;
     bool                 m_is_wireless_side;
-    capwap_map_t         m_capwap_map;
-    capwap_map_it_t      m_capwap_map_it;
-    uint64_t             m_errs = 0;
-    std::string          m_last_err = "";
     char                *m_pkt_data_ptr;
     uint16_t             m_rx_pkt_size;
     uint16_t             m_new_ip_length;
@@ -185,6 +180,22 @@ private:
     IPHeader            *m_ipv4;
     uint32_t             m_client_ip_num;
     rte_mbuf_t          *m_mbuf_ptr;
+
+    // wrapping map stuff
+    struct uint32_hasher {
+        std::size_t operator()(const uint32_t& ip) const {
+            return (ip & 0xffff) ^ (ip >> 16); // xor upper and lower 16 bits
+        }
+    };
+    typedef std::unordered_map<uint32_t,lengthed_str_t*,uint32_hasher> capwap_map_t;
+    typedef capwap_map_t::const_iterator capwap_map_it_t;
+    capwap_map_t         m_capwap_map;
+    capwap_map_it_t      m_capwap_map_it;
+
+    // TODO: add counter per error
+    uint64_t             m_errs = 0;
+    std::string          m_last_err = "";
+
 };
 
 /**************************************
@@ -326,7 +337,7 @@ public:
      * handle a single packet
      * 
      */
-    void handle_pkt(const rte_mbuf_t *m);
+    rx_pkt_action_t handle_pkt(const rte_mbuf_t *m);
 
     /**
      * send next grat arp (if on)
@@ -422,6 +433,7 @@ private:
     CRXCoreIgnoreStat            m_ign_stats_prev;
     
     RXFeatureAPI                 m_feature_api;
+    rx_pkt_action_t              m_rx_pkt_action;
 };
 
 

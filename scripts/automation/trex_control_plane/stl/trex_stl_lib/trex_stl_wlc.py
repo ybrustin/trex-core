@@ -864,6 +864,7 @@ class AP_Manager:
 
 
     def close(self, ports = None):
+        self.disable_proxy_mode(ignore_errors = True)
         if ports is None:
             ports = list(self.service_ctx.keys())
         else:
@@ -1087,14 +1088,15 @@ class AP_Manager:
                     capwap_map = {}
                     del capwap_proxy_info['capwap_map']
                     for client_ip, wrapping in capwap_map_base64.items():
-                        capwap_map[client_ip] = Ether(base64decode(wrapping)).command()
+                        pkt = Ether(base64decode(wrapping))
+                        pkt.hide_defaults()
+                        capwap_map[client_ip] = pkt.command()
                     capwap_proxy_info['capwap_map'] = capwap_map
             per_port_info[port_id] = capwap_proxy_info
         return per_port_info
 
 
     def __del__(self):
-        self.disable_proxy_mode(ignore_errors = True)
         self.close()
 
 

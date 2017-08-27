@@ -1172,7 +1172,9 @@ A side effect is that, to obtain "{" and "}" characters, you must use
                 fv = fv.command()
             elif fld.islist and fld.holds_packets and type(fv) is list:
                 fv = "[%s]" % ",".join( map(Packet.command, fv))
-            elif not isinstance(fld, ConditionalField) or fld.cond(self):
+            elif isinstance(fld, ConditionalField) and not fld.cond(self):
+                continue
+            else:
                 fv = repr(fv)
             f.append("%s=%s" % (fn, fv))
         c = "%s(%s)" % (self.__class__.__name__, ", ".join(f))
