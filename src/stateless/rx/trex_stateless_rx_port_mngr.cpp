@@ -557,7 +557,19 @@ void RXCapwapProxy::create(RXFeatureAPI *api) {
 
 
 void
-RXCapwapProxy::clear_map() {
+RXCapwapProxy::reset() {
+    // clear counters
+    m_bpf_rejected = 0;
+    m_ip_convert_err = 0;
+    m_map_alloc_err = 0;
+    m_map_not_found = 0;
+    m_not_ip = 0;
+    m_too_large_pkt = 0;
+    m_too_small_pkt = 0;
+    m_tx_err = 0;
+    m_tx_ok = 0;
+
+    // clear map
     lengthed_str_t *lengthed_str_ptr;
     for (auto& elem: m_capwap_map) {
         lengthed_str_ptr = elem.second;
@@ -572,7 +584,7 @@ bool
 RXCapwapProxy::set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
     m_is_wireless_side = is_wireless_side;
     m_pair_port_id = pair_port_id;
-    clear_map();
+    reset();
     std::string wrap_data;
     lengthed_str_t *lengthed_str_ptr;
 
@@ -580,21 +592,18 @@ RXCapwapProxy::set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Val
         wrap_data = base64_decode(capwap_map[client_ip_str].asString());
         rc = utl_ipv4_to_uint32(client_ip_str.c_str(), m_client_ip_num);
         if ( !rc ) {
-            m_errs += 1;
-            m_last_err = "Could not convert IP string \"" + client_ip_str + "\"to uint32_t!";
+            m_ip_convert_err += 1;
             return false;
         }
         lengthed_str_ptr = (lengthed_str_t *) malloc(sizeof(lengthed_str_t));
         if (lengthed_str_ptr == NULL) {
-            m_errs += 1;
-            m_last_err = "Could not allocate struct for capwap map";
+            m_map_alloc_err += 1;
             return false; 
         }
         lengthed_str_ptr->m_str = (char *) malloc(wrap_data.size());
         if (lengthed_str_ptr->m_str == NULL) {
             free(lengthed_str_ptr);
-            m_errs += 1;
-            m_last_err = "Could not allocate string for capwap map";
+            m_map_alloc_err += 1;
             return false; 
         }
         lengthed_str_ptr->m_len = wrap_data.size();
@@ -617,11 +626,22 @@ RXCapwapProxy::to_json() const {
         encoded_pkt = base64_encode((unsigned char *) x.second->m_str, x.second->m_len);
         capwap_map_json[client_ip] = encoded_pkt;
     }
-    output["capwap_map"] = capwap_map_json;
-    output["is_wireless_side"] = m_is_wireless_side;
-    output["pair_port_id"] = m_pair_port_id;
-    output["errors"] = Json::UInt64(m_errs);
-    output["last_error"] = m_last_err;
+    output["capwap_map"]        = capwap_map_json;
+    output["is_wireless_side"]  = m_is_wireless_side;
+    output["pair_port_id"]      = m_pair_port_id;
+
+    // counters
+    Json::Value counters   = Json::objectValue;
+    counters["m_bpf_rejected"]    = Json::UInt64(m_bpf_rejected);
+    counters["m_ip_convert_err"]  = Json::UInt64(m_ip_convert_err);
+    counters["m_map_alloc_err"]   = Json::UInt64(m_map_alloc_err);
+    counters["m_map_not_found"]   = Json::UInt64(m_map_not_found);
+    counters["m_not_ip"]          = Json::UInt64(m_not_ip);
+    counters["m_too_large_pkt"]   = Json::UInt64(m_too_large_pkt);
+    counters["m_too_small_pkt"]   = Json::UInt64(m_too_small_pkt);
+    counters["m_tx_err"]          = Json::UInt64(m_tx_err);
+    counters["m_tx_ok"]           = Json::UInt64(m_tx_ok);
+    output["counters"] = counters;
 
     return output;
 }
@@ -633,7 +653,7 @@ RXCapwapProxy::handle_pkt(rte_mbuf_t *m) {
     if ( m_is_wireless_side ) {
         return handle_wireless(m);
     } else {
-        return handle_wired((rte_mbuf_t *) m);
+        return handle_wired(m);
     }
 }
 
@@ -645,6 +665,7 @@ rx_pkt_action_t
 RXCapwapProxy::handle_wired(rte_mbuf_t *m) {
     m_rx_pkt_size = rte_pktmbuf_pkt_len(m);
     if ( unlikely(m_rx_pkt_size < WLAN_IP_OFFSET + ETH_HDR_LEN + IPV4_HDR_LEN) ) { // not accurate but sufficient
+        m_too_small_pkt += 1;
         return RX_PKT_FREE;
     }
     m_pkt_data_ptr = rte_pktmbuf_mtod(m, char *);
@@ -652,6 +673,7 @@ RXCapwapProxy::handle_wired(rte_mbuf_t *m) {
     // verify capwap + wlan
     rc = bpfjit_run(m_wired_bpf_filter, m_pkt_data_ptr, m_rx_pkt_size);
     if ( unlikely(!rc) ) {
+        m_bpf_rejected += 1;
         return RX_PKT_FREE;
     }
 
@@ -661,6 +683,7 @@ RXCapwapProxy::handle_wired(rte_mbuf_t *m) {
     m_capwap_map_it = m_capwap_map.find(m_client_ip_num);
     if ( unlikely(m_capwap_map_it == m_capwap_map.end()) ) {
         //printf("Wired: %u not found in map\n", m_client_ip_num);
+        m_map_not_found += 1;
         return RX_PKT_FREE;
     }
 
@@ -670,10 +693,10 @@ RXCapwapProxy::handle_wired(rte_mbuf_t *m) {
 
     rc = m_api->tx_pkt(m, m_pair_port_id);
     if ( unlikely(!rc) ) {
-        m_errs += 1;
-        m_last_err = "Could not send packet!";
+        m_tx_err += 1;
         return RX_PKT_FREE;
     }
+    m_tx_ok += 1;
     return RX_PKT_NOOP;
 }
 
@@ -685,6 +708,7 @@ rx_pkt_action_t
 RXCapwapProxy::handle_wireless(rte_mbuf_t *m) {
     m_rx_pkt_size = rte_pktmbuf_pkt_len(m);
     if ( unlikely(m_rx_pkt_size < ETH_HDR_LEN + IPV4_HDR_LEN) ) {
+        m_too_small_pkt += 1;
         return RX_PKT_FREE;
     }
     m_pkt_data_ptr = rte_pktmbuf_mtod(m, char *);
@@ -692,6 +716,7 @@ RXCapwapProxy::handle_wireless(rte_mbuf_t *m) {
     // verify IP layer
     m_ether = (EthernetHeader *)m_pkt_data_ptr;
     if ( unlikely(m_ether->getNextProtocol() != EthernetHeader::Protocol::IP) ) {
+        m_not_ip += 1;
         return RX_PKT_FREE;
     }
 
@@ -701,12 +726,12 @@ RXCapwapProxy::handle_wireless(rte_mbuf_t *m) {
     m_capwap_map_it = m_capwap_map.find(m_client_ip_num);
     if ( unlikely(m_capwap_map_it == m_capwap_map.end()) ) {
         //printf("Wireless: %u not found in map\n", m_client_ip_num);
+        m_map_not_found += 1;
         return RX_PKT_FREE;
     }
 
     if ( unlikely(m_rx_pkt_size > MAX_PKT_ALIGN_BUF_9K - (m_capwap_map_it->second->m_len - ETH_HDR_LEN)) ) {
-        m_errs += 1;
-        m_last_err = "Too large packet!";
+        m_too_large_pkt += 1;
         return RX_PKT_FREE;
     }
 
@@ -733,11 +758,11 @@ RXCapwapProxy::handle_wireless(rte_mbuf_t *m) {
 
     rc = m_api->tx_pkt(m_mbuf_ptr, m_pair_port_id);
     if ( unlikely(!rc) ) {
-        m_errs += 1;
-        m_last_err = "Could not send packet!";
+        m_tx_err += 1;
         rte_pktmbuf_free(m_mbuf_ptr);
         return RX_PKT_NOOP;
     }
+    m_tx_ok += 1;
     return RX_PKT_NOOP;
 }
 

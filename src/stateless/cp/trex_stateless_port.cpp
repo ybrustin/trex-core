@@ -1054,13 +1054,24 @@ TrexStatelessPort::start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_sid
     send_message_to_rx( (TrexStatelessCpToRxMsgBase *)msg );
 
     TrexStatelessRxQuery::query_rc_e rc = reply.wait_for_reply();
-    
-    if (rc == TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_ACTIVE) {
+
+    switch (rc) {
+    case TrexStatelessRxQuery::RC_OK:
+        break;
+
+    case TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_ACTIVE:
+        throw TrexException("CAPWAP proxy mode is already active at port " + std::to_string(m_port_id) + " !");
+        break;
+
+    case TrexStatelessRxQuery::RC_ERR:
+        throw TrexException("Could not start CAPWAP proxy on port " + std::to_string(m_port_id) + " !");
+        break;
+
+    default:
         std::stringstream ss;
-        ss << "CAPWAP proxy mode is already active at port " << std::to_string(m_port_id) << " !";
+        ss << "Unknown RC " << rc << " !";
         throw TrexException(ss.str());
     }
-
 }
 
 
@@ -1075,9 +1086,7 @@ TrexStatelessPort::stop_capwap_proxy() {
     TrexStatelessRxQuery::query_rc_e rc = reply.wait_for_reply();
 
     if (rc == TrexStatelessRxQuery::RC_FAIL_CAPWAP_PROXY_INACTIVE) {
-        std::stringstream ss;
-        ss << "CAPWAP proxy mode is not active at port " << std::to_string(m_port_id) << " !";
-        throw TrexException(ss.str());
+        throw TrexException("CAPWAP proxy mode is not active at port " + std::to_string(m_port_id) + " !");
     }
 }
 

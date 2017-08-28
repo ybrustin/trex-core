@@ -723,6 +723,7 @@ public:
      */
     enum query_rc_e {
         RC_OK,
+        RC_ERR,
         RC_FAIL_RX_QUEUE_ACTIVE,
         RC_FAIL_CAPTURE_ACTIVE,
         RC_FAIL_CAPWAP_PROXY_ACTIVE,

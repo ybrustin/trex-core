@@ -329,8 +329,19 @@ class WLC_Plugin(ConsolePlugin):
                     port.set_service_mode(True)
                 self.ap_manager.enable_proxy_mode(wired_port = proxy_wired_port, wireless_port = proxy_wireless_port)
         else:
+            counters_dict = {
+                'BPF reject':       'm_bpf_rejected',
+                'IP convert err':   'm_ip_convert_err',
+                'Alloc error':      'm_map_alloc_err',
+                'Map not found':    'm_map_not_found',
+                'Not IP pkt':       'm_not_ip',
+                'Pkt too large':    'm_too_large_pkt',
+                'Pkt too small':    'm_too_small_pkt',
+                'TX err': 'm_tx_err',
+                'TX OK': 'm_tx_ok',
+                }
             proxy_table = text_tables.Texttable(max_width = 200)
-            categories = ['Port', 'Errors', 'Wrapping map per client']
+            categories = ['Port', 'Counters', 'Wrapping map per client']
             proxy_table.header([bold(c) for c in categories])
             proxy_table.set_cols_align(['l'] * len(categories))
             proxy_table.set_deco(15)
@@ -339,10 +350,22 @@ class WLC_Plugin(ConsolePlugin):
                 if not data or not data['is_active']:
                     continue
                 row = ['ID: %s\n(%s)\nPair: %s' % (port_id, 'WLAN' if data['is_wireless_side'] else 'LAN', data['pair_port_id'])]
-                row.append('%s%s' % (data['errors'], ('\nLast error:\n%s' % data['last_error'] if data['last_error'] else '')))
+                counters_table = text_tables.Texttable()
+                counters_table.set_deco(0)
+                counters_table.set_cols_dtype(['t', 'i'])
+                counters_table.set_cols_align(['l'] * 2)
+                for k in sorted(counters_dict.keys()):
+                    val =  data['counters'][counters_dict[k]]
+                    if not val:
+                        continue
+                    counters_table.add_row(['%s:' % k, val])
+                row.append(counters_table.draw())
                 mappings = []
                 for client_ip in sorted(list(data['capwap_map'].keys()), key = natural_sorted_key):
-                    mappings.append('%s: %s' % (client_ip, data['capwap_map'][client_ip][:100]))
+                    pkt_cmd = data['capwap_map'][client_ip]
+                    if len(pkt_cmd) > 100:
+                        pkt_cmd = pkt_cmd[:97] + '...'
+                    mappings.append('%s: %s' % (client_ip, pkt_cmd))
                 row.append('\n'.join(mappings))
                 proxy_table.add_row(row)
             self.ap_manager.log(proxy_table.draw())

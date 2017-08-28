@@ -154,7 +154,7 @@ class CRxCoreStateless {
      * start proxifying of CAPWAP traffic between WLC and STF TRex
      * 
      */
-    void start_capwap_proxy(uint8_t port_id, uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map);
+    bool start_capwap_proxy(uint8_t port_id, uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map);
     void stop_capwap_proxy(uint8_t port_id);
 
     /**

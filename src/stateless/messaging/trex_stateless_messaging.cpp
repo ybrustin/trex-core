@@ -371,8 +371,11 @@ TrexStatelessRxStartCapwapProxy::handle(CRxCoreStateless *rx_core) {
         m_reply.set_reply(RC_FAIL_CAPWAP_PROXY_ACTIVE);
 
     } else {
-        rx_core->start_capwap_proxy(m_port_id, m_pair_port_id, m_is_wireless_side, m_capwap_map);
-        m_reply.set_reply(RC_OK);
+        if ( rx_core->start_capwap_proxy(m_port_id, m_pair_port_id, m_is_wireless_side, m_capwap_map) ) {
+            m_reply.set_reply(RC_OK);
+        } else {
+            m_reply.set_reply(RC_ERR);
+        }
     }
 
     return true;

@@ -418,10 +418,12 @@ CRxCoreStateless::stop_queue(uint8_t port_id) {
     recalculate_next_state();
 }
 
-void
+bool
 CRxCoreStateless::start_capwap_proxy(uint8_t port_id, uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
-    m_rx_port_mngr[port_id].start_capwap_proxy(pair_port_id, is_wireless_side, capwap_map);
+    bool rc;
+    rc = m_rx_port_mngr[port_id].start_capwap_proxy(pair_port_id, is_wireless_side, capwap_map);
     recalculate_next_state();
+    return rc;
 }
 
 void

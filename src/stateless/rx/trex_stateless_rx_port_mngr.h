@@ -166,7 +166,7 @@ public:
 
     void create(RXFeatureAPI *api);
     bool set_values(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map);
-    void clear_map();
+    void reset();
     rx_pkt_action_t handle_pkt(rte_mbuf_t *m);
     rx_pkt_action_t handle_wired(rte_mbuf_t *m);
     rx_pkt_action_t handle_wireless(rte_mbuf_t *m);
@@ -189,7 +189,7 @@ private:
 
     // wrapping map stuff
     struct uint32_hasher {
-        std::size_t operator()(const uint32_t& ip) const {
+        uint16_t operator()(const uint32_t& ip) const {
             return (ip & 0xffff) ^ (ip >> 16); // xor upper and lower 16 bits
         }
     };
@@ -198,9 +198,16 @@ private:
     capwap_map_t         m_capwap_map;
     capwap_map_it_t      m_capwap_map_it;
 
-    // TODO: add counter per error
-    uint64_t             m_errs = 0;
-    std::string          m_last_err = "";
+    // counters
+    uint64_t             m_bpf_rejected;
+    uint64_t             m_ip_convert_err;
+    uint64_t             m_map_alloc_err;
+    uint64_t             m_map_not_found;
+    uint64_t             m_not_ip;
+    uint64_t             m_too_large_pkt;
+    uint64_t             m_too_small_pkt;
+    uint64_t             m_tx_err;
+    uint64_t             m_tx_ok;
 
 };
 
@@ -313,13 +320,16 @@ public:
         unset_feature(GRAT_ARP);
     }
 
-    void start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
-        m_capwap_proxy.set_values(pair_port_id, is_wireless_side, capwap_map);
+    bool start_capwap_proxy(uint8_t pair_port_id, bool is_wireless_side, Json::Value capwap_map) {
+        if ( !m_capwap_proxy.set_values(pair_port_id, is_wireless_side, capwap_map) ) {
+            return false;
+        }
         set_feature(CAPWAP_PROXY);
+        return true;
     }
 
     void stop_capwap_proxy() {
-        m_capwap_proxy.clear_map();
+        m_capwap_proxy.reset();
         unset_feature(CAPWAP_PROXY);
     }
 

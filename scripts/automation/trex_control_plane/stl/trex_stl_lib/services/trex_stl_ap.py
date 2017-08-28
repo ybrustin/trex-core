@@ -54,6 +54,21 @@ class STLServiceBufferedCtx(STLServiceCtx):
             self._reset()
 
 
+    def _reset(self):
+        self.active_services = 0
+        STLServiceCtx._reset(self)
+
+
+    def _on_process_create(self, *a, **k):
+        self.active_services += 1
+        STLServiceCtx._on_process_create(self, *a, **k)
+
+
+    def _on_process_exit(self, *a, **k):
+        self.active_services -= 1
+        STLServiceCtx._on_process_exit(self, *a, **k)
+
+
     def _tick_process (self):
         while True:
 
