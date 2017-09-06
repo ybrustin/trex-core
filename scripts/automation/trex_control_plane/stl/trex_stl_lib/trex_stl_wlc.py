@@ -1021,13 +1021,12 @@ class AP_Manager:
         port = self.trex_client.ports[wireless_port]
         assert port.is_acquired(), 'Port of "wireless" side is not acquired!'
         assert port.is_resolved(), 'Port destination is not resolved!'
-        wireless_src_mac = port.get_layer_cfg()['ether']['src']
-        wireless_dst_mac = port.get_layer_cfg()['ether']['dst']
+        wireless_src_mac = mac2str(port.get_layer_cfg()['ether']['src'])
+        wireless_dst_mac = mac2str(port.get_layer_cfg()['ether']['dst'])
 
         capwap_map = {}
-        ip_layer = IP()
         for client in clients:
-            wlan_wrapping = client.ap.wrap_pkt_by_wlan(client, Ether(src = client.mac, dst = client.ap.mac_dst)/ip_layer)[:-len(ip_layer)]
+            wlan_wrapping = client.ap.wrap_pkt_by_wlan(client, client.ap.mac_dst_bytes + client.mac_bytes + b'\x08\x00')
             #Ether(wlan_wrapping).show2()
             capwap_map[client.ip] = base64encode(wlan_wrapping)
 
@@ -1044,9 +1043,9 @@ class AP_Manager:
         capwap_map = {}
         for client in clients:
             assert client.ap.mac_dst
-            ether_wrapping = Ether(src = wireless_src_mac, dst = wireless_dst_mac, type = 0x0800)
+            ether_wrapping = wireless_dst_mac + wireless_src_mac + b'\x08\x00'
             #ether_wrapping.show2()
-            capwap_map[client.ip] = base64encode(bytes(ether_wrapping))
+            capwap_map[client.ip] = base64encode(ether_wrapping)
 
         params = {
             'enabled': True,
