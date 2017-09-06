@@ -1036,7 +1036,13 @@ class AP_Manager:
             'is_wireless_side': True,
             'capwap_map': capwap_map,
             }
-        self._set_proxy_mode(port, params)
+        self.trex_client.logger.pre_cmd('Setting wireless side')
+        try:
+            self._set_proxy_mode(port, params)
+        except:
+            self.trex_client.logger.post_cmd(False)
+            raise
+        self.trex_client.logger.post_cmd(True)
 
         # wired side
         port = self.trex_client.ports[wired_port]
@@ -1053,7 +1059,14 @@ class AP_Manager:
             'is_wireless_side': False,
             'capwap_map': capwap_map,
             }
-        self._set_proxy_mode(port, params)
+        self.trex_client.logger.pre_cmd('Setting wired side')
+        try:
+            self._set_proxy_mode(port, params)
+        except:
+            self.trex_client.logger.post_cmd(False)
+            raise
+        self.trex_client.logger.post_cmd(True)
+
 
 
     def disable_proxy_mode(self, ports = None, ignore_errors = False):
