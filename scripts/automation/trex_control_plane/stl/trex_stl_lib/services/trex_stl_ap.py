@@ -196,6 +196,8 @@ class STLServiceApBgMaintenance:
 
     def send(self, pkts):
         assert type(pkts) is list
+        if not pkts:
+            return
         push_pkts = [{'binary': base64.b64encode(bytes(p) if isinstance(p, Ether) else p).decode(),
                       'use_port_dst_mac': False,
                       'use_port_src_mac': False} for p in pkts]
@@ -372,10 +374,10 @@ class STLServiceApBgMaintenance:
                 capwap_assemble['buf'] += control_str
 
                 if rx_pkt.is_last_fragment():
-                    capwap_assemble['assembled'] = CAPWAP_CTRL(
+                    capwap_assemble['assembled'] = bytes(CAPWAP_CTRL(
                         header = capwap_assemble['header'],
                         control_header = CAPWAP_Control_Header(capwap_assemble['buf'])
-                        )
+                        ))
 
             else:
                 if rx_pkt.is_last_fragment():
@@ -476,7 +478,6 @@ class STLServiceApBgMaintenance:
         echo_send_timer = PassiveTimer(1)
         self.send_pkts = []
         while self.capture_id:
-            now_time = time.time()
             self.send(self.send_pkts)
             self.send_pkts = []
             resps = self.recv()

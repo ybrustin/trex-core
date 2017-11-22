@@ -59,12 +59,6 @@ class WLC_Plugin(ConsolePlugin):
         self.add_argument('-i', '--ip', type = check_ipv4_addr,
                 dest = 'ap_ip',
                 help = 'Base AP IP')
-        self.add_argument('-u', '--udp', type = int,
-                dest = 'ap_udp',
-                help = 'Base AP UDP port')
-        self.add_argument('-r', '--radio', metavar = 'MAC', type = check_mac_addr,
-                dest = 'ap_radio',
-                help = 'Base AP Radio MAC')
         self.add_argument('--client-mac', metavar = 'MAC', type = check_mac_addr,
                 dest = 'client_mac',
                 help = 'Base client MAC')
@@ -113,7 +107,7 @@ class WLC_Plugin(ConsolePlugin):
         if aps:
             info_arr = [('IP', aps[0].ip_dst), ('Hostname', aps[0].wlc_name.decode('ascii')), ('Image ver', '.'.join(['%s' % c for c in aps[0].wlc_sw_ver]))]
             general_table.add_row([bold('WLC'), ' / '.join(['%s: %s' % (k, v or '?') for k, v in info_arr])])
-        general_table.add_row([bold('Next AP:'), 'LAN MAC: %s / IP: %s / UDP: %s / Radio MAC: %s' % self.ap_manager._gen_ap_params()])
+        general_table.add_row([bold('Next AP:'), 'MAC: %s / IP: %s' % self.ap_manager._gen_ap_params()])
         general_table.add_row([bold('Next Client:'), 'MAC: %s / IP: %s' % self.ap_manager._gen_client_params()])
         self.ap_manager.log(general_table.draw())
 
@@ -170,7 +164,7 @@ class WLC_Plugin(ConsolePlugin):
         if not port_list:
             raise Exception('Please specify TRex ports where to add AP(s)')
 
-        bu_mac, bu_ip, bu_udp, bu_radio = self.ap_manager._gen_ap_params()
+        bu_mac, bu_ip = self.ap_manager._gen_ap_params()
         init_ports = [port for port in port_list if port not in self.ap_manager.service_ctx]
         ap_names = []
         success = False
@@ -188,7 +182,7 @@ class WLC_Plugin(ConsolePlugin):
             if not success:
                 for name in ap_names: # rollback
                     self.ap_manager.remove_ap(name)
-                self.ap_manager.set_base_values(mac = bu_mac, ip = bu_ip, udp = bu_udp, radio = bu_radio)
+                self.ap_manager.set_base_values(mac = bu_mac, ip = bu_ip)
                 close_ports = [port for port in init_ports if port in self.ap_manager.service_ctx]
                 if close_ports:
                     self.ap_manager.close(close_ports)
@@ -305,9 +299,9 @@ class WLC_Plugin(ConsolePlugin):
         return RC_OK()
 
 
-    def do_base(self, ap_mac, ap_ip, ap_udp, ap_radio, client_mac, client_ip, base_save, base_load):
+    def do_base(self, ap_mac, ap_ip, client_mac, client_ip, base_save, base_load):
         '''Set base values of MAC, IP etc. for created AP/Client.\nWill be increased for each new device.'''
-        self.ap_manager.set_base_values(ap_mac, ap_ip, ap_udp, ap_radio, client_mac, client_ip, base_save, base_load)
+        self.ap_manager.set_base_values(ap_mac, ap_ip, client_mac, client_ip, base_save, base_load)
         self.show_base()
 
 

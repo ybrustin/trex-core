@@ -84,14 +84,13 @@ class AP:
     VERB_DEBUG = 4
     _scapy_cache_static = {}
 
-    def __init__(self, ssl_ctx, logger, trex_port, mac, ip, port, radio_mac, verbose_level = VERB_WARN, rsa_priv_file = None, rsa_cert_file = None):
+    def __init__(self, ssl_ctx, logger, trex_port, mac, ip, verbose_level = VERB_WARN, rsa_priv_file = None, rsa_cert_file = None):
         self.ssl_ctx = ssl_ctx
         self.logger = logger
         self.trex_port = trex_port
         self.port_id = trex_port.port_id
         check_mac_addr(mac)
         check_ipv4_addr(ip)
-        check_mac_addr(radio_mac)
         try:
             self.mac_bytes = mac2str(mac)
         except:
@@ -102,13 +101,10 @@ class AP:
         assert '.' in ip, 'Bad IP format, expected x.x.x.x'
         self.ip_src = is_valid_ipv4_ret(ip)
         self.ip_hum = ip
-        self.udp_port = port
-        self.udp_port_str = int2str(port, 2)
-        try:
-            self.radio_mac_bytes = mac2str(radio_mac)
-        except:
-            raise Exception('Bad radio MAC format, expected aa:bb:cc:dd:ee:ff')
-        self.radio_mac = radio_mac
+        self.udp_port = 50000 # should not matter
+        self.udp_port_str = int2str(self.udp_port, 2)
+        self.radio_mac_bytes = b'\x94' + self.ip_src + b'\x00'
+        self.radio_mac = str2mac(self.radio_mac_bytes)
         self.ssl = None
         self.in_bio = None
         self.out_bio = None
@@ -551,8 +547,6 @@ class AP_Manager:
         self.ap_by_name = {}
         self.ap_by_mac = {}
         self.ap_by_ip = {}
-        self.ap_by_udp_port = {}
-        self.ap_by_radio_mac = {}
         self.client_by_id = {}
         self.bg_lock = threading.RLock()
         self.service_ctx = {}
@@ -605,8 +599,6 @@ class AP_Manager:
         except:
             self.next_ap_mac = '94:12:12:12:12:01'
             self.next_ap_ip = '9.9.12.1'
-            self.next_ap_udp = 10001
-            self.next_ap_radio = '94:14:14:14:01:00'
             self.next_client_mac = '94:13:13:13:13:01'
             self.next_client_ip = '9.9.13.1'
 
@@ -620,10 +612,6 @@ class AP_Manager:
             return self.ap_by_mac[ap_id]
         elif ap_id in self.ap_by_ip:
             return self.ap_by_ip[ap_id]
-        elif ap_id in self.ap_by_udp_port:
-            return self.ap_by_udp_port[ap_id]
-        elif ap_id in self.ap_by_radio_mac:
-            return self.ap_by_radio_mac[ap_id]
         else:
             raise Exception('AP with id %s does not exist!' % ap_id)
 
@@ -637,27 +625,19 @@ class AP_Manager:
             raise Exception('Client with id %s does not exist!' % client_id)
 
 
-    def create_ap(self, trex_port_id, mac, ip, udp_port, radio_mac, verbose_level = AP.VERB_WARN, rsa_priv_file = None, rsa_cert_file = None):
+    def create_ap(self, trex_port_id, mac, ip, verbose_level = AP.VERB_WARN, rsa_priv_file = None, rsa_cert_file = None):
         if trex_port_id not in self.service_ctx:
             raise Exception('TRex port %s does not exist!' % trex_port_id)
         if ':' not in mac:
             mac = str2mac(mac)
-        if ':' not in radio_mac:
-            radio_mac = str2mac(radio_mac)
         if mac in self.ap_by_mac:
             raise Exception('AP with such MAC (%s) already exists!' % mac)
         if ip in self.ap_by_ip:
             raise Exception('AP with such IP (%s) already exists!' % ip)
-        if udp_port in self.ap_by_udp_port:
-            raise Exception('AP with such UDP port (%s) already exists!' % udp_port)
-        if radio_mac in self.ap_by_radio_mac:
-            raise Exception('AP with such radio MAC port (%s) already exists!' % radio_mac)
-        ap = AP(self.ssl_ctx, self.trex_client.logger, self.trex_client.ports[trex_port_id], mac, ip, udp_port, radio_mac, verbose_level, rsa_priv_file, rsa_cert_file)
+        ap = AP(self.ssl_ctx, self.trex_client.logger, self.trex_client.ports[trex_port_id], mac, ip, verbose_level, rsa_priv_file, rsa_cert_file)
         self.ap_by_name[ap.name] = ap
         self.ap_by_mac[mac] = ap
         self.ap_by_ip[ip] = ap
-        self.ap_by_udp_port[udp_port] = ap
-        self.ap_by_radio_mac[radio_mac] = ap
         with self.bg_lock:
             self.aps.append(ap)
             self.service_ctx[trex_port_id]['synced'] = False
@@ -678,8 +658,6 @@ class AP_Manager:
         del self.ap_by_name[ap.name]
         del self.ap_by_mac[ap.mac]
         del self.ap_by_ip[ap.ip_hum]
-        del self.ap_by_udp_port[ap.udp_port]
-        del self.ap_by_radio_mac[ap.radio_mac]
 
 
     def remove_client(self, id):
@@ -713,7 +691,7 @@ class AP_Manager:
             self.trex_client.logger.post_cmd(True)
 
     '''
-    ids is a list, each index can be either mac, ip, udp_port or name
+    ids is a list, each index can be either mac, ip, name
     '''
     def join_aps(self, ids = None):
         if not ids:
@@ -897,18 +875,7 @@ class AP_Manager:
             self.next_ap_ip = increase_ip(self.next_ap_ip)
             assert is_valid_ipv4(self.next_ap_ip)
 
-        # udp
-        while self.next_ap_udp in self.ap_by_udp_port:
-            if self.next_ap_udp >= 65500:
-                raise Exception('Can not increase base UDP any further: %s' % self.next_ap_udp)
-            self.next_ap_udp += 1
-
-        # radio
-        while self.next_ap_radio in self.ap_by_radio_mac:
-            self.next_ap_radio = increase_mac(self.next_ap_radio, 256)
-            assert is_valid_mac(self.next_ap_radio)
-
-        return self.next_ap_mac, self.next_ap_ip, self.next_ap_udp, self.next_ap_radio
+        return self.next_ap_mac, self.next_ap_ip
 
 
     def _gen_client_params(self):
@@ -929,9 +896,9 @@ class AP_Manager:
         self.trex_client.logger.log(msg)
 
 
-    def set_base_values(self, mac = None, ip = None, udp = None, radio = None, client_mac = None, client_ip = None, save = None, load = None):
+    def set_base_values(self, mac = None, ip = None, client_mac = None, client_ip = None, save = None, load = None):
         if load:
-            if any([mac, ip, udp, radio, client_mac, client_ip, save]):
+            if any([mac, ip, client_mac, client_ip, save]):
                 raise Exception('Can not use --load with other arguments.')
             if not os.path.exists(self.base_file_path):
                 raise Exception('No saved file.')
@@ -941,8 +908,6 @@ class AP_Manager:
                     base_values = yaml.safe_load(f.read())
                 mac        = base_values['ap_mac']
                 ip         = base_values['ap_ip']
-                udp        = base_values['ap_udp']
-                radio      = base_values['ap_radio']
                 client_mac = base_values['client_mac']
                 client_ip  = base_values['client_ip']
             except Exception as e:
@@ -955,13 +920,6 @@ class AP_Manager:
             check_mac_addr(mac)
         if ip:
             check_ipv4_addr(ip)
-        if udp:
-            if udp < 1023 and udp > 65000:
-                raise Exception('Base UDP port should be within range 1024-65000')
-        if radio:
-            check_mac_addr(radio)
-            if radio.split(':')[-1] != '00':
-                raise Exception('Radio MACs should end with zero, got: %s' % radio)
         if client_mac:
             check_mac_addr(client_mac)
         if client_ip:
@@ -972,10 +930,6 @@ class AP_Manager:
             self.next_ap_mac = mac
         if ip:
             self.next_ap_ip = ip
-        if udp:
-            self.next_ap_udp = udp
-        if radio:
-            self.next_ap_radio = radio
         if client_mac:
             self.next_client_mac = client_mac
         if client_ip:
@@ -987,8 +941,6 @@ class AP_Manager:
                     f.write(yaml.dump({
                         'ap_mac':     self.next_ap_mac,
                         'ap_ip':      self.next_ap_ip,
-                        'ap_udp':     self.next_ap_udp,
-                        'ap_radio':   self.next_ap_radio,
                         'client_mac': self.next_client_mac,
                         'client_ip':  self.next_client_ip,
                         }))
