@@ -6,17 +6,35 @@
 
 static inline void sanb_smp_store_memory_barrier (void)
 {
+#if defined(__x86__) || defined(__x86_64__)
     asm volatile ("sfence":::"memory");
+#elif defined(__aarch64__)
+    asm volatile ("dmb st":::);
+#else
+    #error "Undefined Platform"
+#endif
 }
 
 static inline void sanb_smp_load_memory_barrier (void)
 {
+#if defined(__x86__) || defined(__x86_64__)
     asm volatile ("lfence":::"memory");
+#elif defined(__aarch64__)
+    asm volatile ("dmb ld":::);
+#else
+    #error "Undefined Platform"
+#endif
 }
 
 static inline void sanb_smp_memory_barrier (void)
 {
+#if defined(__x86__) || defined(__x86_64__)
     asm volatile ("mfence":::"memory");
+#elif defined(__aarch64__)
+    asm volatile ("dmb ish":::);
+#else
+    #error "Undefined Platform"
+#endif
 }
 
 

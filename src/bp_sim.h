@@ -842,7 +842,7 @@ public:
 
 
 
-#if __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 /* size of 64 bytes */
     #define DEFER_CLIENTS_NUM (16)
 #else

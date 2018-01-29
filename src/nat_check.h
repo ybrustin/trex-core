@@ -131,7 +131,7 @@ struct CNatFlowInfo {
     uint16_t m_pad;
 };
 
-#if __x86_64__
+#if defined(__x86_64__) || defined(__aarch64__)
 /* size of 64 bytes */
     #define MAX_NAT_FLOW_INFO (7)
     #define MAX_PKT_MSG_INFO  (26)
@@ -150,7 +150,7 @@ struct CGenNodeNatInfo : public CGenNodeMsgBase {
     uint8_t       m_pad;
     uint16_t      m_cnt;
     //uint32_t      m_pad2;
- #if __x86_64__
+ #if defined(__x86_64__) || defined(__aarch64__)
     uint32_t      m_pad3;
  #endif
     CNatFlowInfo  m_data[MAX_NAT_FLOW_INFO];

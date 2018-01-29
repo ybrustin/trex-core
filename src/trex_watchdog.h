@@ -151,7 +151,13 @@ private:
     void set_timeout(double timeout_sec) {
         /* before changing timeout we MUST tickle and memory fence o.w the main thread might crash */
         tickle();
+#if defined(__x64__) || defined(__x86_64__)
         asm volatile("mfence" ::: "memory");
+#elif defined(__aarch64__)
+        asm volatile("dmb ish":::);
+#else
+        #error "Unknown CPU"
+#endif
         m_timeout_sec = timeout_sec;
     }
 

@@ -56,7 +56,13 @@ public:
         m_reply = reply;
 
         /* before marking as done make sure all stores are committed */
+#if defined(__x64__) || defined(__x86_64__)
         asm volatile("mfence" ::: "memory");
+#elif defined(__aarch64__)
+        asm volatile("dmb ish":::);
+#else
+    #error "Unknown CPU"
+#endif
         m_pending = false;
     }
 
