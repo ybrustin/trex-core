@@ -10,7 +10,7 @@ ucs_ver = 'ucs2' if sys.maxunicode == 65535 else 'ucs4'
 CURRENT_PATH        = os.path.dirname(os.path.realpath(__file__))
 ROOT_PATH           = os.path.abspath(os.path.join(CURRENT_PATH, os.pardir))     # path to trex_control_plane directory
 PATH_TO_PYTHON_LIB  = os.path.abspath(os.path.join(ROOT_PATH, os.pardir, os.pardir, 'external_libs'))
-ZMQ_PATH            = os.path.abspath(os.path.join(PATH_TO_PYTHON_LIB, 'pyzmq-14.5.0', python_ver, ucs_ver, '64bit'))
+ZMQ_PATH            = os.path.abspath(os.path.join(PATH_TO_PYTHON_LIB, os.uname[4], 'pyzmq-14.5.0', python_ver, ucs_ver, '64bit'))
 YAML_PATH           = os.path.abspath(os.path.join(PATH_TO_PYTHON_LIB, 'pyyaml-3.11', python_ver))
 
 CLIENT_UTILS_MODULES = ['dpkt-1.8.6',

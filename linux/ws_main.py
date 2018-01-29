@@ -18,6 +18,7 @@ from waflib import Logs
 top = '../'
 out = 'build'
 b_path ="./build/linux/"
+march = os.uname()[4]
 
 REQUIRED_CC_VERSION = "4.7.0"
 SANITIZE_CC_VERSION = "4.9.0"
@@ -429,7 +430,7 @@ includes_path =''' ../src/pal/linux/
                    ../src/stx/common/rx/
                    
                    ../external_libs/json/
-                   ../external_libs/zmq/include/
+                   ../external_libs/zmq-'''+ march +'''/include/
                    ../external_libs/yaml-cpp/include/
                    ../external_libs/bpf/
               ''';
