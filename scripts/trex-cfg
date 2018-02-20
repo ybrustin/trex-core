@@ -50,7 +50,5 @@ done
 PARENT_ARGS="$0 $@"
 
 source find_python.sh
-if ! (grep interfaces /etc/trex_cfg.yaml | grep "vdev" >> /dev/null) ; then
-    $PYTHON ./dpdk_setup_ports.py --parent "$PARENT_ARGS"
-fi
+$PYTHON ./dpdk_setup_ports.py --parent "$PARENT_ARGS"
 
