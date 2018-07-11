@@ -2130,16 +2130,16 @@ void CPhyEthIF::configure(uint16_t nb_rx_queue,
                  ret, m_repid);
 
     /* get device info */
-    rte_eth_dev_info_get(m_repid, &m_dev_info);
+    const struct rte_eth_dev_info *m_dev_info = m_port_attr->get_dev_info();
 
     if (CGlobalInfo::m_options.preview.getChecksumOffloadEnable()) {
         /* check if the device supports TCP and UDP checksum offloading */
-        if ((m_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_UDP_CKSUM) == 0) {
+        if ((m_dev_info->tx_offload_capa & DEV_TX_OFFLOAD_UDP_CKSUM) == 0) {
             rte_exit(EXIT_FAILURE, "Device does not support UDP checksum offload: "
                      "port=%u\n",
                      m_repid);
         }
-        if ((m_dev_info.tx_offload_capa & DEV_TX_OFFLOAD_TCP_CKSUM) == 0) {
+        if ((m_dev_info->tx_offload_capa & DEV_TX_OFFLOAD_TCP_CKSUM) == 0) {
             rte_exit(EXIT_FAILURE, "Device does not support TCP checksum offload: "
                      "port=%u\n",
                      m_repid);
@@ -2291,6 +2291,18 @@ void CPhyEthIF::disable_flow_control(){
                  ret, m_repid);
 }
 
+void fill_pci_dev(struct rte_eth_dev_info *dev_info, struct rte_pci_device* pci_dev) {
+    if ( dev_info->device ) {
+        const struct rte_bus *bus = nullptr;
+        bus = rte_bus_find_by_device(dev_info->device);
+        if ( bus && !strcmp(bus->name, "pci") ) {
+            pci_dev = RTE_DEV_TO_PCI(dev_info->device);
+            return;
+        }
+    }
+    pci_dev = nullptr;
+}
+
 /*
 Get user friendly devices description from saved env. var
 Changes certain attributes based on description
@@ -2299,15 +2311,17 @@ void DpdkTRexPortAttr::update_description(){
     char pci[18];
     char * envvar;
     std::string pci_envvar_name;
-    struct rte_pci_addr *pci_addr = NULL;
-    struct rte_eth_dev_info dev_info;
-    rte_eth_dev_info_get(m_repid , &dev_info);
-    pci_addr = &(dev_info.pci_dev->addr);
-    if (dev_info.pci_dev && pci_addr) {
-        rte_pci_device_name(pci_addr,pci, sizeof(pci));
+
+    fill_pci_dev(&m_dev_info, m_pci_dev);
+
+    if ( m_pci_dev ) {
+        struct rte_pci_addr *pci_addr = &(m_pci_dev->addr);
+        rte_pci_device_name(pci_addr, pci, sizeof(pci));
         intf_info_st.pci_addr = pci;
+        intf_info_st.numa_node = m_dev_info.device->numa_node;
     } else {
-        intf_info_st.pci_addr="none";
+        intf_info_st.pci_addr = "N/A";
+        intf_info_st.numa_node = -1;
     }
     pci_envvar_name = "pci" + intf_info_st.pci_addr;
     std::replace(pci_envvar_name.begin(), pci_envvar_name.end(), ':', '_');
@@ -2415,11 +2429,11 @@ void DpdkTRexPortAttr::dump_link(FILE *fd){
 }
 
 void DpdkTRexPortAttr::update_device_info(){
-    rte_eth_dev_info_get(m_repid, &dev_info);
+    rte_eth_dev_info_get(m_repid, &m_dev_info);
 }
 
 void DpdkTRexPortAttr::get_supported_speeds(supp_speeds_t &supp_speeds){
-    uint32_t speed_capa = dev_info.speed_capa;
+    uint32_t speed_capa = m_dev_info.speed_capa;
     if (speed_capa & ETH_LINK_SPEED_1G)
         supp_speeds.push_back(ETH_SPEED_NUM_1G);
     if (speed_capa & ETH_LINK_SPEED_10G)
@@ -7280,15 +7294,17 @@ void dump_interfaces_info() {
     struct ether_addr mac_addr;
     char mac_str[ETHER_ADDR_FMT_SIZE];
     struct rte_eth_dev_info dev_info;
-    struct rte_pci_addr *pci_addr = NULL;
+    struct rte_pci_addr *pci_addr = nullptr;
+    struct rte_pci_device* pci_dev = nullptr;
 
     for (uint8_t port_id=0; port_id<m_max_ports; port_id++) {
         // PCI, MAC and Driver
         rte_eth_dev_info_get(port_id, &dev_info);
         rte_eth_macaddr_get(port_id, &mac_addr);
         ether_format_addr(mac_str, sizeof mac_str, &mac_addr);
-        if ( dev_info.pci_dev ) {
-            pci_addr = &(dev_info.pci_dev->addr);
+        fill_pci_dev(&dev_info, pci_dev);
+        if ( pci_dev ) {
+            pci_addr = &(pci_dev->addr);
             printf("PCI: %04x:%02x:%02x.%d", pci_addr->domain, pci_addr->bus, pci_addr->devid, pci_addr->function);
         } else {
             printf("PCI: N/A");
@@ -9323,17 +9339,8 @@ TrexDpdkPlatformApi::get_port_info(uint8_t port_id, intf_info_st &info) const {
 
     memcpy(info.hw_macaddr, rte_mac_addr.addr_bytes, 6);
 
-    if ( CGlobalInfo::m_options.m_is_vdev || g_trex.m_ports[port_id]->is_dummy() ) {
-        info.numa_node = -1;
-        info.pci_addr = "N/A";
-    } else {
-        info.numa_node =  g_trex.m_ports[port_id]->m_dev_info.pci_dev->device.numa_node;
-        struct rte_pci_addr *loc = &g_trex.m_ports[port_id]->m_dev_info.pci_dev->addr;
-
-        char pci_addr[50];
-        snprintf(pci_addr, sizeof(pci_addr), PCI_PRI_FMT, loc->domain, loc->bus, loc->devid, loc->function);
-        info.pci_addr = pci_addr;
-    }
+    info.numa_node = g_trex.m_ports[port_id]->get_port_attr()->get_numa();
+    info.pci_addr = g_trex.m_ports[port_id]->get_port_attr()->get_pci_addr();
 }
 
 void

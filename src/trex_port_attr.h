@@ -36,6 +36,9 @@ limitations under the License.
 class TRexPortAttr {
 public:
 
+    TRexPortAttr() {
+        m_pci_dev = nullptr;
+    }
     virtual ~TRexPortAttr(){}
 
 /*    UPDATES    */
@@ -62,9 +65,13 @@ public:
     virtual bool is_link_change_supported() { return flag_is_link_change_supported; }
     virtual bool is_prom_change_supported() { return flag_is_prom_change_supported; }
     virtual const std::string &get_description() { return intf_info_st.description; }
+    virtual int get_numa(void) { return intf_info_st.numa_node; }
+    virtual const std::string& get_pci_addr(void) { return intf_info_st.pci_addr; }
     virtual void get_supported_speeds(supp_speeds_t &supp_speeds) = 0;
     virtual bool is_loopback() const = 0;
-    
+    virtual struct rte_pci_device* get_pci_dev() const { return m_pci_dev; }
+    virtual const struct rte_eth_dev_info* get_dev_info() const { return &m_dev_info; }
+
     virtual std::string get_rx_filter_mode() const;
 
 /*    SETTERS    */
@@ -86,15 +93,16 @@ public:
     
     uint8_t get_port_id() const {
         return m_port_id;
-    } 
+    }
 
 protected:
 
     uint8_t                   m_port_id;
     rte_eth_link              m_link;
 
-    struct rte_eth_dev_info   dev_info;
-    
+    struct rte_eth_dev_info   m_dev_info;
+    struct rte_pci_device    *m_pci_dev;
+
     rx_filter_mode_e m_rx_filter_mode;
 
     bool       flag_is_virtual;
@@ -133,16 +141,14 @@ public:
         flag_is_led_change_supported = (set_led(true) != -ENOTSUP);
         flag_is_link_change_supported = (set_link_up(true) != -ENOTSUP);
         flag_is_prom_change_supported = is_prom_allowed;
-        update_description();
         update_device_info();
+        update_description();
     }
 
 /*    UPDATES    */
     virtual void update_link_status();
     virtual bool update_link_status_nowait(); // returns true if the status was changed
-    virtual void update_device_info();
     virtual void reset_xstats();
-    virtual void update_description();
 
 /*    GETTERS    */
     virtual bool get_promiscuous();
@@ -166,6 +172,10 @@ public:
 
 /*    DUMPS    */
     virtual void dump_link(FILE *fd);
+
+protected:
+    virtual void update_device_info();
+    virtual void update_description();
 
 private:
     uint8_t         m_tvpid ;
@@ -207,9 +217,7 @@ public:
     /* DUMMY */
     void update_link_status() {}
     bool update_link_status_nowait() { return false; }
-    void update_device_info() {}
     void reset_xstats() {}
-    void update_description() { intf_info_st.description = "Dummy port"; }
     bool get_promiscuous() { return false; }
     bool get_multicast() { return false; }
     void get_hw_src_mac(struct ether_addr *mac_addr) {}
@@ -227,6 +235,13 @@ public:
     int set_rx_filter_mode(rx_filter_mode_e mode) { return -ENOTSUP; }
     bool is_loopback() const { return false; }
     std::string get_rx_filter_mode() {return "";}
+protected:
+    void update_device_info() {}
+    void update_description() {
+        intf_info_st.pci_addr = "N/A";
+        intf_info_st.description = "Dummy port";
+        intf_info_st.numa_node = -1;
+    }
 };
 
 
