@@ -742,9 +742,9 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  'lib/librte_eal/linuxapp/eal/eal_timer.c',
                  'lib/librte_eal/linuxapp/eal/eal_vfio_mp_sync.c',
                  'lib/librte_eal/linuxapp/eal/eal_vfio.c',
-                 'lib/librte_ether/rte_ethdev.c',
-                 'lib/librte_ether/rte_flow.c',
-                 'lib/librte_ether/ethdev_profile.c',
+                 'lib/librte_ethdev/rte_ethdev.c',
+                 'lib/librte_ethdev/rte_flow.c',
+                 'lib/librte_ethdev/ethdev_profile.c',
                  'lib/librte_hash/rte_cuckoo_hash.c',
                  'lib/librte_kvargs/rte_kvargs.c',
                  'lib/librte_mbuf/rte_mbuf.c',
@@ -753,6 +753,7 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  'lib/librte_mempool/rte_mempool_ops.c',
                  'lib/librte_net/rte_net.c',
                  'lib/librte_net/rte_net_crc.c',
+                 'lib/librte_net/rte_arp.c',
                  'lib/librte_ring/rte_ring.c',
                  'lib/librte_pci/rte_pci.c',
             ]);
@@ -975,7 +976,6 @@ dpdk_includes_path =''' ../src/
                         ../src/dpdk/lib/
                         ../src/dpdk/lib/librte_cfgfile/
                         ../src/dpdk/lib/librte_compat/
-                        ../src/dpdk/lib/librte_distributor/
                         ../src/dpdk/lib/librte_eal/
                         ../src/dpdk/lib/librte_eal/common/
                         ../src/dpdk/lib/librte_eal/common/include/
@@ -986,8 +986,7 @@ dpdk_includes_path =''' ../src/
                         ../src/dpdk/lib/librte_eal/linuxapp/eal/
                         ../src/dpdk/lib/librte_eal/linuxapp/eal/include/
                         ../src/dpdk/lib/librte_eal/linuxapp/eal/include/exec-env/
-                        ../src/dpdk/lib/librte_eal/linuxapp/igb_uio/
-                        ../src/dpdk/lib/librte_ether/
+                        ../src/dpdk/lib/librte_ethdev/
                         ../src/dpdk/lib/librte_hash/
                         ../src/dpdk/lib/librte_kvargs/
                         ../src/dpdk/lib/librte_mbuf/
