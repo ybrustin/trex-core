@@ -914,6 +914,7 @@ __rte_mbuf_refcnt_update(struct rte_mbuf *m, int16_t value)
 static inline uint16_t
 rte_mbuf_refcnt_update(struct rte_mbuf *m, int16_t value)
 {
+#ifndef TREX_PATCH
 	/*
 	 * The atomic_add is an expensive operation, so we don't want to
 	 * call it in the case where we know we are the uniq holder of
@@ -928,6 +929,20 @@ rte_mbuf_refcnt_update(struct rte_mbuf *m, int16_t value)
 	}
 
 	return __rte_mbuf_refcnt_update(m, value);
+
+#else
+    if (likely(m->m_core_locality == RTE_MBUF_CORE_LOCALITY_LOCAL)) {
+        m->refcnt = (uint16_t)(m->refcnt + value);
+        return m->refcnt;
+    } else {
+        if ( m->m_core_locality == RTE_MBUF_CORE_LOCALITY_CONST ){
+            /* no ref count */
+            return m->refcnt;
+        }else{
+            return (uint16_t)(rte_atomic16_add_return(&m->refcnt_atomic, value));
+        }
+    }
+#endif
 }
 
 #else /* ! RTE_MBUF_REFCNT_ATOMIC */
@@ -1101,6 +1116,12 @@ rte_mbuf_raw_free(struct rte_mbuf *m)
 	RTE_ASSERT(rte_mbuf_refcnt_read(m) == 1);
 	RTE_ASSERT(m->next == NULL);
 	RTE_ASSERT(m->nb_segs == 1);
+#ifdef TREX_PATCH
+    RTE_ASSERT(m->m_core_locality!=RTE_MBUF_CORE_LOCALITY_CONST);
+    if (m->m_core_locality != RTE_MBUF_CORE_LOCALITY_MULTI) {
+        m->m_core_locality = RTE_MBUF_CORE_LOCALITY_MULTI;
+    }
+#endif
 	__rte_mbuf_sanity_check(m, 0);
 	rte_mempool_put(m->pool, m);
 }
@@ -1313,6 +1334,10 @@ static inline void rte_pktmbuf_reset(struct rte_mbuf *m)
 
 	m->ol_flags = 0;
 	m->packet_type = 0;
+#ifdef TREX_PATCH
+    m->m_core_locality = RTE_MBUF_CORE_LOCALITY_MULTI;
+#endif
+
 	rte_pktmbuf_reset_headroom(m);
 
 	m->data_len = 0;
@@ -1709,7 +1734,11 @@ rte_pktmbuf_prefree_seg(struct rte_mbuf *m)
 
 		return m;
 
+#ifndef TREX_PATCH
 	} else if (__rte_mbuf_refcnt_update(m, -1) == 0) {
+#else
+    } else if (likely(rte_mbuf_refcnt_update(m, -1) == 0)) {
+#endif
 
 		if (!RTE_MBUF_DIRECT(m))
 			rte_pktmbuf_detach(m);

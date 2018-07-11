@@ -482,6 +482,9 @@ static void enicpmd_dev_info_get(struct rte_eth_dev *eth_dev,
 	device_info->reta_size = enic->reta_size;
 	device_info->hash_key_size = enic->hash_key_size;
 	device_info->flow_type_rss_offloads = enic->flow_type_rss_offloads;
+#ifdef TREX_PATCH
+    device_info->speed_capa = ETH_LINK_SPEED_40G;
+#endif
 }
 
 static const uint32_t *enicpmd_dev_supported_ptypes_get(struct rte_eth_dev *dev)
