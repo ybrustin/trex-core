@@ -24,6 +24,10 @@ RTE_INIT(rte_memcpy_init)
 		return;
 	}
 #endif
+#ifndef TREX_PATCH
 	rte_memcpy_ptr = rte_memcpy_sse;
+#else
+	rte_memcpy_ptr = rte_memcpy;
+#endif
 	RTE_LOG(DEBUG, EAL, "Default SSE/AVX memcpy is using!\n");
 }
