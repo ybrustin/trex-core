@@ -856,6 +856,9 @@ struct rte_fdir_conf {
 	struct rte_eth_fdir_masks mask;
 	struct rte_eth_fdir_flex_conf flex_conf;
 	/**< Flex payload configuration. */
+#ifdef TREX_PATCH
+    uint8_t flexbytes_offset;
+#endif
 };
 
 /**
