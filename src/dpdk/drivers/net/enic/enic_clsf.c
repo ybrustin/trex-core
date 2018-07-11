@@ -1,40 +1,11 @@
-/*
- * Copyright 2008-2014 Cisco Systems, Inc.  All rights reserved.
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright 2008-2017 Cisco Systems, Inc.  All rights reserved.
  * Copyright 2007 Nuova Systems, Inc.  All rights reserved.
- *
- * Copyright (c) 2014, Cisco Systems, Inc.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in
- * the documentation and/or other materials provided with the
- * distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
  */
 
 #include <libgen.h>
 
-#include <rte_ethdev.h>
+#include <rte_ethdev_driver.h>
 #include <rte_malloc.h>
 #include <rte_hash.h>
 #include <rte_byteorder.h>
@@ -132,28 +103,6 @@ copy_fltr_v1(struct filter_v2 *fltr, struct rte_eth_fdir_input *input,
 	fltr->u.ipv4.flags = FILTER_FIELDS_IPV4_5TUPLE;
 }
 
-#ifdef TREX_PATCH
-void
-copy_fltr_recv_all(struct filter_v2 *fltr, struct rte_eth_fdir_input *input,
-             struct rte_eth_fdir_masks *masks) {
-	struct filter_generic_1 *gp = &fltr->u.generic_1;
-	memset(gp, 0, sizeof(*gp));
-
-    struct ether_hdr eth_mask, eth_val;
-    memset(&eth_mask, 0, sizeof(eth_mask));
-    memset(&eth_val, 0, sizeof(eth_val));
-
-    eth_val.ether_type = 0xdead;
-    eth_mask.ether_type = 0;
-
-    gp->position = 0;
-    enic_set_layer(gp, 0, FILTER_GENERIC_1_L2,
-			       &eth_mask, &eth_val, sizeof(struct ether_hdr));
-
-}
-#endif
-
-
 /* Copy Flow Director filter to a VIC generic filter (requires advanced
  * filter support.
  */
@@ -162,16 +111,9 @@ copy_fltr_v2(struct filter_v2 *fltr, struct rte_eth_fdir_input *input,
 	     struct rte_eth_fdir_masks *masks)
 {
 	struct filter_generic_1 *gp = &fltr->u.generic_1;
-	int i;
 
 	fltr->type = FILTER_DPDK_1;
 	memset(gp, 0, sizeof(*gp));
-
-    #ifdef TREX_PATCH
-    // important for this to be below 2.
-    // If added with position 2, IPv6 UDP and ICMP seems to be caught by some other rule
-    gp->position = 1;
-    #endif
 
 	if (input->flow_type == RTE_ETH_FLOW_NONFRAG_IPV4_UDP) {
 		struct udp_hdr udp_mask, udp_val;
@@ -330,18 +272,14 @@ copy_fltr_v2(struct filter_v2 *fltr, struct rte_eth_fdir_input *input,
 			ipv6_mask.proto = masks->ipv6_mask.proto;
 			ipv6_val.proto = input->flow.ipv6_flow.proto;
 		}
-		for (i = 0; i < 4; i++) {
-			*(uint32_t *)&ipv6_mask.src_addr[i * 4] =
-					masks->ipv6_mask.src_ip[i];
-			*(uint32_t *)&ipv6_val.src_addr[i * 4] =
-					input->flow.ipv6_flow.src_ip[i];
-		}
-		for (i = 0; i < 4; i++) {
-			*(uint32_t *)&ipv6_mask.dst_addr[i * 4] =
-					masks->ipv6_mask.src_ip[i];
-			*(uint32_t *)&ipv6_val.dst_addr[i * 4] =
-					input->flow.ipv6_flow.dst_ip[i];
-		}
+		memcpy(ipv6_mask.src_addr, masks->ipv6_mask.src_ip,
+		       sizeof(ipv6_mask.src_addr));
+		memcpy(ipv6_val.src_addr, input->flow.ipv6_flow.src_ip,
+		       sizeof(ipv6_val.src_addr));
+		memcpy(ipv6_mask.dst_addr, masks->ipv6_mask.dst_ip,
+		       sizeof(ipv6_mask.dst_addr));
+		memcpy(ipv6_val.dst_addr, input->flow.ipv6_flow.dst_ip,
+		       sizeof(ipv6_val.dst_addr));
 		if (input->flow.ipv6_flow.tc) {
 			ipv6_mask.vtc_flow = masks->ipv6_mask.tc << 12;
 			ipv6_val.vtc_flow = input->flow.ipv6_flow.tc << 12;
@@ -366,11 +304,7 @@ int enic_fdir_del_fltr(struct enic *enic, struct rte_eth_fdir_filter *params)
 	case -EINVAL:
 	case -ENOENT:
 		enic->fdir.stats.f_remove++;
-#ifdef TREX_PATCH
-		return pos;
-#else
 		return -EINVAL;
-#endif
 	default:
 		/* The entry is present in the table */
 		key = enic->fdir.nodes[pos];
@@ -483,19 +417,8 @@ int enic_fdir_add_fltr(struct enic *enic, struct rte_eth_fdir_filter *params)
 	key->filter = *params;
 	key->rq_index = queue;
 
-#ifdef TREX_PATCH
-    switch (params->soft_id) {
-    case 100:
-        copy_fltr_recv_all(&fltr, &params->input, &enic->rte_dev->data->dev_conf.fdir_conf.mask);
-        break;
-    default:
-#endif
 	enic->fdir.copy_fltr_fn(&fltr, &params->input,
 				&enic->rte_dev->data->dev_conf.fdir_conf.mask);
-#ifdef TREX_PATCH
-    }
-#endif
-
 	action.type = FILTER_ACTION_RQ_STEERING;
 	action.rq_idx = queue;
 
