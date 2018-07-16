@@ -3720,7 +3720,7 @@ mlx5_dev_filter_ctrl(struct rte_eth_dev *dev,
 	case RTE_ETH_FILTER_FDIR:
 		return mlx5_fdir_ctrl_func(dev, filter_op, arg);
 	default:
-		DRV_LOG(ERR, "port %u filter type (%d) not supported",
+		DRV_LOG(DEBUG, "port %u filter type (%d) not supported",
 			dev->data->port_id, filter_type);
 		rte_errno = ENOTSUP;
 		return -rte_errno;

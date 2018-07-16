@@ -773,7 +773,7 @@ public:
     virtual void get_dpdk_drv_params(CTrexDpdkParams &p) {
         CTRexExtendedDriverBase::get_dpdk_drv_params(p);
         if (get_is_tcp_mode()){
-            p.rx_mbuf_type = MBUF_9k; /* due to trex-481*/
+            p.rx_mbuf_type = MBUF_2048;
         }
     }
 
