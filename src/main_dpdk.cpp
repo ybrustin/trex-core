@@ -770,14 +770,6 @@ public:
         return ( new CTRexExtendedDriverBaseMlnx5G() );
     }
 
-    virtual void get_dpdk_drv_params(CTrexDpdkParams &p) {
-        CTRexExtendedDriverBase::get_dpdk_drv_params(p);
-        if (get_is_tcp_mode()){
-            p.rx_mbuf_type = MBUF_2048;
-        }
-    }
-
-
     virtual void update_global_config_fdir(port_cfg_t * cfg){
     }
 
