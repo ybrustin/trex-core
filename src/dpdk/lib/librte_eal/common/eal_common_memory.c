@@ -323,8 +323,10 @@ memseg_primary_init_32(void)
 		socket_id = rte_socket_id_by_idx(i);
 
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
+#ifndef TREX_PATCH
 		if (socket_id > 0)
 			break;
+#endif
 #endif
 
 		/* if we didn't specifically request memory on this socket */
@@ -454,8 +456,10 @@ memseg_primary_init(void)
 			socket_id = rte_socket_id_by_idx(i);
 
 #ifndef RTE_EAL_NUMA_AWARE_HUGEPAGES
+#ifndef TREX_PATCH
 			if (socket_id > 0)
 				break;
+#endif
 #endif
 
 			if (total_mem >= max_mem)
