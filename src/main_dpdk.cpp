@@ -8340,6 +8340,7 @@ void CTRexExtendedDriverBase40G::update_configuration(port_cfg_t * cfg){
     cfg->m_port_conf.fdir_conf.mode = RTE_FDIR_MODE_PERFECT;
     cfg->m_port_conf.fdir_conf.pballoc = RTE_FDIR_PBALLOC_64K;
     cfg->m_port_conf.fdir_conf.status = RTE_FDIR_NO_REPORT_STATUS;
+    cfg->m_port_conf.rxmode.offloads &= ~DEV_RX_OFFLOAD_SCATTER;
 }
 
 // What is the type of the rule the respective hw_id counter counts.
