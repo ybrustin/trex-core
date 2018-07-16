@@ -1506,8 +1506,10 @@ mlx5_flow_create_vlan(const struct rte_flow_item *item,
 			 * From verbs perspective an empty VLAN is equivalent
 			 * to a packet without VLAN layer.
 			 */
+#ifndef TREX_PATCH
 			if (!eth->mask.vlan_tag)
 				goto error;
+#endif
 			/* Outer TPID cannot be matched. */
 			if (eth->mask.ether_type) {
 				msg = "VLAN TPID matching is not supported";

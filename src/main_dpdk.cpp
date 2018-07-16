@@ -1941,18 +1941,23 @@ public:
         m_tx_conf.tx_thresh.pthresh = TX_PTHRESH;
         m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
         m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
+        m_tx_conf.offloads          = 0;
+        m_tx_conf.txq_flags         = ETH_TXQ_FLAGS_IGNORE;
 
-        m_port_conf.rxmode.jumbo_frame=1;
-        m_port_conf.rxmode.max_rx_pkt_len =9*1024+22;
-        m_port_conf.rxmode.hw_strip_crc=1;
-        m_port_conf.rxmode.enable_scatter = 1;
+        m_port_conf.rxmode.max_rx_pkt_len = 9*1024+22;
+        m_port_conf.rxmode.ignore_offload_bitfield = 1;
+        m_port_conf.rxmode.offloads |= ( DEV_RX_OFFLOAD_JUMBO_FRAME
+                                       | DEV_RX_OFFLOAD_CRC_STRIP
+                                       | DEV_RX_OFFLOAD_SCATTER );
+        // start optimistic
+        m_port_conf.txmode.offloads = UINT64_MAX;
     }
 
-    inline void update_var(void){
+    inline void update_var(void) {
         get_ex_drv()->update_configuration(this);
-        if ( m_port_conf.rxmode.enable_lro && 
-            CGlobalInfo::m_options.preview.getLroOffloadDisable()  ) {
-            m_port_conf.rxmode.enable_lro=0;
+        if ( (m_port_conf.rxmode.offloads & DEV_RX_OFFLOAD_TCP_LRO) && 
+            CGlobalInfo::m_options.preview.getLroOffloadDisable() ) {
+            m_port_conf.rxmode.offloads &= ~DEV_RX_OFFLOAD_TCP_LRO;
             printf("Warning LRO is supported and asked to be disabled by user \n");
         }
     }
@@ -6447,51 +6452,55 @@ void CPhyEthIF::conf_queues() {
     socket_id_t socket_id = CGlobalInfo::m_socket.port_to_socket((port_id_t)m_tvpid);
     assert(CGlobalInfo::m_mem_pool[socket_id].m_mbuf_pool_2048);
 
-    struct rte_eth_dev_info dev_info;
+    const struct rte_eth_dev_info *dev_info = m_port_attr->get_dev_info();
     if ( get_is_tcp_mode_multi_core() ){
-       rte_eth_dev_info_get(m_repid,&dev_info);
+        uint8_t hash_key_size;
+        #ifdef RSS_DEBUG
+        printf("reta_size : %d \n", dev_info->reta_size);
+        printf("hash_key  : %d \n", dev_info->hash_key_size);
+        #endif
 
-       #ifdef RSS_DEBUG
-       printf("reta_size : %d \n",dev_info.reta_size);
-       printf("hash_key  : %d \n",dev_info.hash_key_size);
-       #endif
+        if ( dev_info->hash_key_size==0 ) {
+            hash_key_size = 40; /* for mlx5 */
+        } else {
+            hash_key_size = dev_info->hash_key_size;
+        }
 
-       if (dev_info.hash_key_size==0){
-          dev_info.hash_key_size=40; /* for mlx5 */
-       }
-
-       if (!rte_eth_dev_filter_supported(m_repid, RTE_ETH_FILTER_HASH)) {
-            // Setup HW touse the TOEPLITZ hash function as an RSS hash function
-            struct rte_eth_hash_filter_info info = {};
-            info.info_type = RTE_ETH_HASH_FILTER_GLOBAL_CONFIG;
-            info.info.global_conf.hash_func = RTE_ETH_HASH_FUNCTION_TOEPLITZ;
-            if (rte_eth_dev_filter_ctrl(m_repid, RTE_ETH_FILTER_HASH,
-                                        RTE_ETH_FILTER_SET, &info) < 0) {
-              printf(" ERROR cannot set hash function on a port %d \n",m_repid);
-              exit(1);
+        if (!rte_eth_dev_filter_supported(m_repid, RTE_ETH_FILTER_HASH)) {
+                // Setup HW touse the TOEPLITZ hash function as an RSS hash function
+                struct rte_eth_hash_filter_info info = {};
+                info.info_type = RTE_ETH_HASH_FILTER_GLOBAL_CONFIG;
+                info.info.global_conf.hash_func = RTE_ETH_HASH_FUNCTION_TOEPLITZ;
+                if (rte_eth_dev_filter_ctrl(m_repid, RTE_ETH_FILTER_HASH,
+                                            RTE_ETH_FILTER_SET, &info) < 0) {
+                printf(" ERROR cannot set hash function on a port %d \n",m_repid);
+                exit(1);
+                }
+        }
+        /* set reta_mask, for now it is ok to set one value to all ports */
+        uint8_t reta_mask=(uint8_t)(min(dev_info->reta_size,(uint16_t)256)-1);
+        if (CGlobalInfo::m_options.m_reta_mask==0){
+                CGlobalInfo::m_options.m_reta_mask = reta_mask ;
+        }else{
+            if (CGlobalInfo::m_options.m_reta_mask != reta_mask){
+                printf("ERROR reta_mask should be the same to all nics \n!");
+                exit(1);
             }
-       }
-       /* set reta_mask, for now it is ok to set one value to all ports */
-       uint8_t reta_mask=(uint8_t)(min(dev_info.reta_size,(uint16_t)256)-1);
-       if (CGlobalInfo::m_options.m_reta_mask==0){
-            CGlobalInfo::m_options.m_reta_mask = reta_mask ;
-       }else{
-          if (CGlobalInfo::m_options.m_reta_mask != reta_mask){
-               printf("ERROR reta_mask should be the same to all nics \n!");
-               exit(1);
-           }
-       }
-       g_trex.m_port_cfg.m_port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
-       struct rte_eth_rss_conf *lp_rss =&g_trex.m_port_cfg.m_port_conf.rx_adv_conf.rss_conf;
-       lp_rss->rss_hf = ETH_RSS_UDP | ETH_RSS_TCP;
-       bool is_client_side = ((get_tvpid()%2==0)?true:false);
-       if (is_client_side) {
-           lp_rss->rss_key =  (uint8_t*)&client_rss_key[0];
-       }else{
-           lp_rss->rss_key =  (uint8_t*)&server_rss_key[0];
-       }
-       lp_rss->rss_key_len = dev_info.hash_key_size;
+        }
+        g_trex.m_port_cfg.m_port_conf.rxmode.mq_mode = ETH_MQ_RX_RSS;
+        struct rte_eth_rss_conf *lp_rss =&g_trex.m_port_cfg.m_port_conf.rx_adv_conf.rss_conf;
+        lp_rss->rss_hf = ETH_RSS_UDP | ETH_RSS_TCP;
+        bool is_client_side = ((get_tvpid()%2==0)?true:false);
+        if (is_client_side) {
+            lp_rss->rss_key =  (uint8_t*)&client_rss_key[0];
+        }else{
+            lp_rss->rss_key =  (uint8_t*)&server_rss_key[0];
+        }
+        lp_rss->rss_key_len = hash_key_size;
     }
+
+    // disable non-supported tx port offloads
+    g_trex.m_port_cfg.m_port_conf.txmode.offloads &= dev_info->tx_offload_capa;
 
     configure(dpdk_p.rx_drop_q_num + dpdk_p.rx_data_q_num, num_tx_q, &g_trex.m_port_cfg.m_port_conf);
 
@@ -8110,9 +8119,8 @@ void CTRexExtendedDriverBase10G::update_configuration(port_cfg_t * cfg){
     cfg->m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
     cfg->m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
     if ( get_is_tcp_mode() ) {
-        cfg->m_port_conf.rxmode.hw_strip_crc = 1;
-        cfg->m_port_conf.rxmode.enable_lro = 1;
-        cfg->m_port_conf.rxmode.hw_ip_checksum = 1;
+        cfg->m_port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_CHECKSUM;
+        cfg->m_port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_LRO;
     }
 }
 
@@ -9122,8 +9130,6 @@ void CTRexExtendedDriverVirtBase::update_configuration(port_cfg_t * cfg) {
     cfg->m_tx_conf.tx_thresh.pthresh = TX_PTHRESH_1G;
     cfg->m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
     cfg->m_tx_conf.tx_thresh.wthresh = 0;
-    // must have this, otherwise the driver fail at init
-    cfg->m_tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOXSUMS;
 }
 
 int CTRexExtendedDriverVirtBase::configure_rx_filter_rules(CPhyEthIF * _if){
@@ -9153,13 +9159,14 @@ CFlowStatParser *CTRexExtendedDriverVirtBase::get_flow_stat_parser() {
 
 
 void CTRexExtendedDriverVirtio::update_configuration(port_cfg_t * cfg){
-        CTRexExtendedDriverVirtBase::update_configuration(cfg);
-        if ( get_is_tcp_mode() ) {
-            cfg->m_port_conf.rxmode.enable_lro = 1;
-        }
-        if (cfg->m_port_conf.rxmode.max_rx_pkt_len > g_dev_info.max_rx_pktlen ) {
-            cfg->m_port_conf.rxmode.max_rx_pkt_len = g_dev_info.max_rx_pktlen;
-        }
+    CTRexExtendedDriverVirtBase::update_configuration(cfg);
+    rte_eth_rxmode *rxmode = &cfg->m_port_conf.rxmode;
+    if ( get_is_tcp_mode() ) {
+        rxmode->offloads |= DEV_RX_OFFLOAD_TCP_LRO;
+    }
+    if (rxmode->max_rx_pkt_len > g_dev_info.max_rx_pktlen ) {
+        rxmode->max_rx_pkt_len = g_dev_info.max_rx_pktlen;
+    }
 }
 
 
@@ -9183,7 +9190,7 @@ void CTRexExtendedDriverBaseE1000::update_configuration(port_cfg_t * cfg) {
     CTRexExtendedDriverVirtBase::update_configuration(cfg);
     // We configure hardware not to strip CRC. Then DPDK driver removes the CRC.
     // If configuring "hardware" to remove CRC, due to bug in ESXI e1000 emulation, we got packets with CRC.
-    cfg->m_port_conf.rxmode.hw_strip_crc = 0;
+    cfg->m_port_conf.rxmode.offloads &= ~DEV_RX_OFFLOAD_CRC_STRIP;
 }
 
 
@@ -9193,16 +9200,16 @@ void CTRexExtendedDriverVmxnet3::update_configuration(port_cfg_t * cfg){
     cfg->m_tx_conf.tx_thresh.pthresh = TX_PTHRESH_1G;
     cfg->m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
     cfg->m_tx_conf.tx_thresh.wthresh = 0;
-    // must have this, otherwise the driver fail at init
-    cfg->m_tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOXSUMSCTP;
     if ( get_is_tcp_mode() ) {
-       cfg->m_port_conf.rxmode.enable_lro = 1;
+        cfg->m_port_conf.rxmode.offloads |= DEV_RX_OFFLOAD_TCP_LRO;
     }
+    cfg->m_port_conf.rxmode.offloads &= ~DEV_RX_OFFLOAD_CRC_STRIP;
 }
 
 void CTRexExtendedDriverAfPacket::update_configuration(port_cfg_t * cfg){
     CTRexExtendedDriverVirtBase::update_configuration(cfg);
     cfg->m_port_conf.rxmode.max_rx_pkt_len = 1514;
+    cfg->m_port_conf.rxmode.offloads = 0;
 }
 
 ///////////////////////////////////////////////////////// VF
