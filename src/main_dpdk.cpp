@@ -770,6 +770,13 @@ public:
         return ( new CTRexExtendedDriverBaseMlnx5G() );
     }
 
+    virtual void get_dpdk_drv_params(CTrexDpdkParams &p) {
+        CTRexExtendedDriverBase::get_dpdk_drv_params(p);
+        if (get_is_tcp_mode()){
+            p.rx_mbuf_type = MBUF_9k; /* due to trex-481*/
+        }
+    }
+
     virtual void update_global_config_fdir(port_cfg_t * cfg){
     }
 
@@ -1933,7 +1940,6 @@ public:
         m_tx_conf.tx_thresh.pthresh = TX_PTHRESH;
         m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
         m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
-        m_tx_conf.offloads          = 0;
         m_tx_conf.txq_flags         = ETH_TXQ_FLAGS_IGNORE;
 
         m_port_conf.rxmode.max_rx_pkt_len = 9*1024+22;
