@@ -760,7 +760,7 @@ i40e_fdir_fill_eth_ip_head(const struct rte_eth_fdir_input *fdir_input,
 		ip6->vtc_flow =
 			rte_cpu_to_be_32(I40E_FDIR_IPv6_DEFAULT_VTC_FLOW |
 					 (fdir_input->flow.ipv6_flow.tc <<
-#ifdef TREX_PATCH
+#ifndef TREX_PATCH
 					  I40E_FDIR_IPv6_TC_OFFSET));
 #else
                       I40E_FDIR_IPv6_TC_OFFSET) |
