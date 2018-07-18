@@ -278,4 +278,6 @@ class CGlobalTRexInterface  {
     CPhyEthIF *get_ports(uint8_t &port_num);
 };
 
+bool fill_pci_dev(struct rte_eth_dev_info *dev_info, struct rte_pci_device* pci_dev);
+
 #endif

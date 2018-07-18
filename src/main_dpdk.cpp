@@ -407,7 +407,7 @@ public:
     }
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid,repid, false, true, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, true, true, true);
     }
 
     static CTRexExtendedDriverBase * create(){
@@ -456,7 +456,7 @@ typedef uint8_t repid_t; /* DPDK port id  */
 class CTRexExtendedDriverVirtBase : public CTRexExtendedDriverBase {
 public:
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid, repid,true, true, true);
+        return new DpdkTRexPortAttr(tvpid, repid, true, true, true, true);
     }
     virtual void update_global_config_fdir(port_cfg_t * cfg) {}
 
@@ -533,7 +533,7 @@ public:
         return ( new CTRexExtendedDriverI40evf() );
     }
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid, repid,true, true, false);
+        return new DpdkTRexPortAttr(tvpid, repid, true, true, false, true);
     }
 };
 
@@ -552,7 +552,7 @@ public:
         return ( new CTRexExtendedDriverIxgbevf() );
     }
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid, repid,true, true, false);
+        return new DpdkTRexPortAttr(tvpid, repid, true, true, false, true);
     }
 };
 
@@ -581,6 +581,9 @@ public:
     static CTRexExtendedDriverBase * create(){
         return ( new CTRexExtendedDriverAfPacket() );
     }
+    virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
+        return new DpdkTRexPortAttr(tvpid, repid, true, true, true, false);
+    }
     virtual void get_dpdk_drv_params(CTrexDpdkParams &p) {
         CTRexExtendedDriverVirtBase::get_dpdk_drv_params(p);
         p.rx_mbuf_type = MBUF_9k;
@@ -596,7 +599,7 @@ public:
     }
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid,repid, false, true, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, true, true, true);
     }
 
     static CTRexExtendedDriverBase * create(){
@@ -639,7 +642,7 @@ public:
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
         // disabling flow control on 40G using DPDK API causes the interface to malfunction
-        return new DpdkTRexPortAttr(tvpid,repid, false, false, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, false, true, true);
     }
 
     static CTRexExtendedDriverBase * create(){
@@ -711,7 +714,7 @@ public:
     }
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid,repid, false, false, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, false, true, true);
     }
 
     static CTRexExtendedDriverBase * create(){
@@ -763,7 +766,7 @@ public:
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
         // disabling flow control on 40G using DPDK API causes the interface to malfunction
-        return new DpdkTRexPortAttr(tvpid,repid, false, false, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, false, true, true);
     }
 
     static CTRexExtendedDriverBase * create(){
@@ -866,7 +869,7 @@ public:
     ~CTRexExtendedDriverBaseNtAcc();
 
     virtual TRexPortAttr * create_port_attr(tvpid_t tvpid,repid_t repid) {
-        return new DpdkTRexPortAttr(tvpid,repid, false, false, true);
+        return new DpdkTRexPortAttr(tvpid, repid, false, false, true, true);
     }
 
     virtual bool sleep_after_arp_needed(){
@@ -1052,8 +1055,6 @@ CTRexExtendedDriverBase * CTRexExtendedDriverDb::create_driver(std::string name)
     }
     return( (CTRexExtendedDriverBase *)0);
 }
-
-
 
 CTRexExtendedDriverDb * CTRexExtendedDriverDb::Ins(){
     if (!m_ins) {
@@ -2294,163 +2295,6 @@ void CPhyEthIF::disable_flow_control(){
                  ret, m_repid);
 }
 
-void fill_pci_dev(struct rte_eth_dev_info *dev_info, struct rte_pci_device* pci_dev) {
-    if ( dev_info->device ) {
-        const struct rte_bus *bus = nullptr;
-        bus = rte_bus_find_by_device(dev_info->device);
-        if ( bus && !strcmp(bus->name, "pci") ) {
-            pci_dev = RTE_DEV_TO_PCI(dev_info->device);
-            return;
-        }
-    }
-    pci_dev = nullptr;
-}
-
-/*
-Get user friendly devices description from saved env. var
-Changes certain attributes based on description
-*/
-void DpdkTRexPortAttr::update_description(){
-    char pci[18];
-    char * envvar;
-    std::string pci_envvar_name;
-
-    fill_pci_dev(&m_dev_info, m_pci_dev);
-
-    if ( m_pci_dev ) {
-        struct rte_pci_addr *pci_addr = &(m_pci_dev->addr);
-        rte_pci_device_name(pci_addr, pci, sizeof(pci));
-        intf_info_st.pci_addr = pci;
-        intf_info_st.numa_node = m_dev_info.device->numa_node;
-    } else {
-        intf_info_st.pci_addr = "N/A";
-        intf_info_st.numa_node = -1;
-    }
-    pci_envvar_name = "pci" + intf_info_st.pci_addr;
-    std::replace(pci_envvar_name.begin(), pci_envvar_name.end(), ':', '_');
-    std::replace(pci_envvar_name.begin(), pci_envvar_name.end(), '.', '_');
-    envvar = std::getenv(pci_envvar_name.c_str());
-    if (envvar) {
-        intf_info_st.description = envvar;
-    } else {
-        intf_info_st.description = "Unknown";
-    }
-    if (intf_info_st.description.find("82599ES") != std::string::npos) { // works for 82599EB etc. DPDK does not distinguish them
-        flag_is_link_change_supported = false;
-    }
-    if (intf_info_st.description.find("82545EM") != std::string::npos) { // in virtual E1000, DPDK claims fc is supported, but it's not
-        flag_is_fc_change_supported = false;
-        flag_is_led_change_supported = false;
-    }
-    if ( CGlobalInfo::m_options.preview.getVMode() > 0){
-        printf("port %d desc: %s\n", m_repid, intf_info_st.description.c_str());
-    }
-}
-
-int DpdkTRexPortAttr::set_led(bool on){
-    if (on) {
-        return rte_eth_led_on(m_repid);
-    }else{
-        return rte_eth_led_off(m_repid);
-    }
-}
-
-int DpdkTRexPortAttr::get_flow_ctrl(int &mode) {
-    int ret = rte_eth_dev_flow_ctrl_get(m_repid, &fc_conf_tmp);
-    if (ret) {
-        mode = -1;
-        return ret;
-    }
-    mode = (int) fc_conf_tmp.mode;
-    return 0;
-}
-
-int DpdkTRexPortAttr::set_flow_ctrl(int mode) {
-    if (!flag_is_fc_change_supported) {
-        return -ENOTSUP;
-    }
-    int ret = rte_eth_dev_flow_ctrl_get(m_repid, &fc_conf_tmp);
-    if (ret) {
-        return ret;
-    }
-    fc_conf_tmp.mode = (enum rte_eth_fc_mode) mode;
-    return rte_eth_dev_flow_ctrl_set(m_repid, &fc_conf_tmp);
-}
-
-void DpdkTRexPortAttr::reset_xstats() {
-    rte_eth_xstats_reset(m_repid);
-}
-
-int DpdkTRexPortAttr::get_xstats_values(xstats_values_t &xstats_values) {
-    int size = rte_eth_xstats_get(m_repid, NULL, 0);
-    if (size < 0) {
-        return size;
-    }
-    xstats_values_tmp.resize(size);
-    xstats_values.resize(size);
-    size = rte_eth_xstats_get(m_repid, xstats_values_tmp.data(), size);
-    if (size < 0) {
-        return size;
-    }
-    for (int i=0; i<size; i++) {
-        xstats_values[xstats_values_tmp[i].id] = xstats_values_tmp[i].value;
-    }
-    return 0;
-}
-
-int DpdkTRexPortAttr::get_xstats_names(xstats_names_t &xstats_names){
-    int size = rte_eth_xstats_get_names(m_repid, NULL, 0);
-    if (size < 0) {
-        return size;
-    }
-    xstats_names_tmp.resize(size);
-    xstats_names.resize(size);
-    size = rte_eth_xstats_get_names(m_repid, xstats_names_tmp.data(), size);
-    if (size < 0) {
-        return size;
-    }
-    for (int i=0; i<size; i++) {
-        xstats_names[i] = xstats_names_tmp[i].name;
-    }
-    return 0;
-}
-
-void DpdkTRexPortAttr::dump_link(FILE *fd){
-    fprintf(fd,"port : %d \n",(int)m_tvpid);
-    fprintf(fd,"------------\n");
-
-    fprintf(fd,"link         : ");
-    if (m_link.link_status) {
-        fprintf(fd," link : Link Up - speed %u Mbps - %s\n",
-                (unsigned) m_link.link_speed,
-                (m_link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-                ("full-duplex") : ("half-duplex\n"));
-    } else {
-        fprintf(fd," Link Down\n");
-    }
-    fprintf(fd,"promiscuous  : %d \n",get_promiscuous());
-}
-
-void DpdkTRexPortAttr::update_device_info(){
-    rte_eth_dev_info_get(m_repid, &m_dev_info);
-}
-
-void DpdkTRexPortAttr::get_supported_speeds(supp_speeds_t &supp_speeds){
-    uint32_t speed_capa = m_dev_info.speed_capa;
-    if (speed_capa & ETH_LINK_SPEED_1G)
-        supp_speeds.push_back(ETH_SPEED_NUM_1G);
-    if (speed_capa & ETH_LINK_SPEED_10G)
-        supp_speeds.push_back(ETH_SPEED_NUM_10G);
-    if (speed_capa & ETH_LINK_SPEED_40G)
-        supp_speeds.push_back(ETH_SPEED_NUM_40G);
-    if (speed_capa & ETH_LINK_SPEED_100G)
-        supp_speeds.push_back(ETH_SPEED_NUM_100G);
-}
-
-void DpdkTRexPortAttr::update_link_status(){
-    rte_eth_link_get(m_repid, &m_link);
-}
-
 int DpdkTRexPortAttr::add_mac(char * mac){
     struct ether_addr mac_addr;
     for (int i=0; i<6;i++) {
@@ -2465,62 +2309,6 @@ int DpdkTRexPortAttr::add_mac(char * mac){
     }
 
     return 0;
-}
-
-int DpdkTRexPortAttr::set_promiscuous(bool enable){
-    if ( !is_prom_change_supported() ) {
-        return -ENOTSUP;
-    }
-    if (enable) {
-        rte_eth_promiscuous_enable(m_repid);
-    }else{
-        rte_eth_promiscuous_disable(m_repid);
-    }
-    return 0;
-}
-
-int DpdkTRexPortAttr::set_multicast(bool enable){
-    if (enable) {
-        rte_eth_allmulticast_enable(m_repid);
-    }else{
-        rte_eth_allmulticast_disable(m_repid);
-    }
-    return 0;
-}
-
-int DpdkTRexPortAttr::set_link_up(bool up){
-    if (up) {
-        return rte_eth_dev_set_link_up(m_repid);
-    }else{
-        return rte_eth_dev_set_link_down(m_repid);
-    }
-}
-
-bool DpdkTRexPortAttr::get_promiscuous(){
-    int ret=rte_eth_promiscuous_get(m_repid);
-    if (ret<0) {
-        rte_exit(EXIT_FAILURE, "rte_eth_promiscuous_get: "
-                 "err=%d, port=%u\n",
-                 ret, m_repid);
-
-    }
-    return ( ret?true:false);
-}
-
-bool DpdkTRexPortAttr::get_multicast(){
-    int ret=rte_eth_allmulticast_get(m_repid);
-    if (ret<0) {
-        rte_exit(EXIT_FAILURE, "rte_eth_allmulticast_get: "
-                 "err=%d, port=%u\n",
-                 ret, m_repid);
-
-    }
-    return ( ret?true:false);
-}
-
-
-void DpdkTRexPortAttr::get_hw_src_mac(struct ether_addr *mac_addr){
-    rte_eth_macaddr_get(m_repid, mac_addr);
 }
 
 int CPhyEthIF::dump_fdir_global_stats(FILE *fd) {
@@ -7301,17 +7089,16 @@ void dump_interfaces_info() {
     struct ether_addr mac_addr;
     char mac_str[ETHER_ADDR_FMT_SIZE];
     struct rte_eth_dev_info dev_info;
-    struct rte_pci_addr *pci_addr = nullptr;
-    struct rte_pci_device* pci_dev = nullptr;
+    struct rte_pci_device pci_dev;
 
     for (uint8_t port_id=0; port_id<m_max_ports; port_id++) {
         // PCI, MAC and Driver
         rte_eth_dev_info_get(port_id, &dev_info);
         rte_eth_macaddr_get(port_id, &mac_addr);
         ether_format_addr(mac_str, sizeof mac_str, &mac_addr);
-        fill_pci_dev(&dev_info, pci_dev);
-        if ( pci_dev ) {
-            pci_addr = &(pci_dev->addr);
+        bool ret = fill_pci_dev(&dev_info, &pci_dev);
+        if ( ret ) {
+            struct rte_pci_addr *pci_addr = &pci_dev.addr;
             printf("PCI: %04x:%02x:%02x.%d", pci_addr->domain, pci_addr->bus, pci_addr->devid, pci_addr->function);
         } else {
             printf("PCI: N/A");
