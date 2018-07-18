@@ -601,7 +601,8 @@ rte_eal_init(int argc, char **argv)
 	}
 
 	/* create runtime data directory */
-	if (eal_create_runtime_dir() < 0) {
+	if (internal_config.no_shconf == 0 &&
+			eal_create_runtime_dir() < 0) {
 		rte_eal_init_alert("Cannot create runtime directory\n");
 		rte_errno = EACCES;
 		return -1;
@@ -624,6 +625,11 @@ rte_eal_init(int argc, char **argv)
 	}
 
 	rte_config_init();
+
+	if (rte_eal_intr_init() < 0) {
+		rte_eal_init_alert("Cannot init interrupt-handling thread\n");
+		return -1;
+	}
 
 	/* Put mp channel init before bus scan so that we can init the vdev
 	 * bus through mp channel in the secondary process before the bus scan.
@@ -710,11 +716,6 @@ rte_eal_init(int argc, char **argv)
 	if (rte_eal_alarm_init() < 0) {
 		rte_eal_init_alert("Cannot init interrupt-handling thread\n");
 		/* rte_eal_alarm_init sets rte_errno on failure. */
-		return -1;
-	}
-
-	if (rte_eal_intr_init() < 0) {
-		rte_eal_init_alert("Cannot init interrupt-handling thread\n");
 		return -1;
 	}
 
