@@ -343,7 +343,7 @@ mlx5_glue_dv_create_qp(struct ibv_context *context,
 #endif
 }
 
-const struct mlx5_glue *mlx5_glue = &(const struct mlx5_glue){
+const struct mlx5_glue *mlx5_glue __attribute__((__aligned__(64))) = &(const struct mlx5_glue){
 	.version = MLX5_GLUE_VERSION,
 	.fork_init = mlx5_glue_fork_init,
 	.alloc_pd = mlx5_glue_alloc_pd,
