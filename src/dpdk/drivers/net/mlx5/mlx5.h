@@ -94,6 +94,13 @@ struct mlx5_stats_priv {
 
 #endif
 
+/** Switch information returned by mlx5_nl_switch_info(). */
+struct mlx5_switch_info {
+	uint32_t master:1; /**< Master device. */
+	uint32_t representor:1; /**< Representor device. */
+	int32_t port_name; /**< Representor port name. */
+	uint64_t switch_id; /**< Switch identifier. */
+};
 
 LIST_HEAD(mlx5_dev_list, priv);
 
@@ -156,7 +163,7 @@ struct mlx5_dev_config {
 		unsigned int min_rxqs_num;
 		/* Rx queue count threshold to enable MPRQ. */
 	} mprq; /* Configurations for Multi-Packet RQ. */
-	unsigned int max_verbs_prio; /* Number of Verb flow priorities. */
+	unsigned int flow_prio; /* Number of flow priorities. */
 	unsigned int tso_max_payload_sz; /* Maximum TCP payload for TSO. */
 	unsigned int ind_table_max_size; /* Maximum indirection table size. */
 	int txq_inline; /* Maximum packet size for inlining. */
@@ -173,9 +180,6 @@ enum mlx5_verbs_alloc_type {
 	MLX5_VERBS_ALLOC_TYPE_RX_QUEUE,
 };
 
-/* 8 Verbs priorities. */
-#define MLX5_VERBS_FLOW_PRIO_8 8
-
 /**
  * Verbs allocator needs a context to know in the callback which kind of
  * resources it is allocating.
@@ -187,12 +191,19 @@ struct mlx5_verbs_alloc_ctx {
 
 LIST_HEAD(mlx5_mr_list, mlx5_mr);
 
+/* Flow drop context necessary due to Verbs API. */
+struct mlx5_drop {
+	struct mlx5_hrxq *hrxq; /* Hash Rx queue queue. */
+	struct mlx5_rxq_ibv *rxq; /* Verbs Rx queue. */
+};
+
 struct priv {
 	LIST_ENTRY(priv) mem_event_cb; /* Called by memory event callback. */
 	struct rte_eth_dev_data *dev_data;  /* Pointer to device data. */
 	struct ibv_context *ctx; /* Verbs context. */
 	struct ibv_device_attr_ex device_attr; /* Device properties. */
 	struct ibv_pd *pd; /* Protection Domain. */
+	char ibdev_name[IBV_SYSFS_NAME_MAX]; /* IB device name. */
 	char ibdev_path[IBV_SYSFS_PATH_MAX]; /* IB device path for secondary */
 	struct ether_addr mac[MLX5_MAX_MAC_ADDRESSES]; /* MAC addresses. */
 	BITFIELD_DECLARE(mac_own, uint64_t, MLX5_MAX_MAC_ADDRESSES);
@@ -201,8 +212,10 @@ struct priv {
 	unsigned int vlan_filter_n; /* Number of configured VLAN filters. */
 	/* Device properties. */
 	uint16_t mtu; /* Configured MTU. */
-	uint8_t port; /* Physical port number. */
 	unsigned int isolated:1; /* Whether isolated mode is enabled. */
+	unsigned int representor:1; /* Device is a port representor. */
+	uint16_t domain_id; /* Switch domain identifier. */
+	int32_t representor_id; /* Port representor identifier. */
 	/* RX/TX queues. */
 	unsigned int rxqs_n; /* RX queues array size. */
 	unsigned int txqs_n; /* TX queues array size. */
@@ -213,9 +226,11 @@ struct priv {
 	struct rte_intr_handle intr_handle; /* Interrupt handler. */
 	unsigned int (*reta_idx)[]; /* RETA index table. */
 	unsigned int reta_idx_n; /* RETA index size. */
-	struct mlx5_hrxq_drop *flow_drop_queue; /* Flow drop queue. */
+	struct mlx5_drop drop_queue; /* Flow drop queues. */
 	struct mlx5_flows flows; /* RTE Flow rules. */
 	struct mlx5_flows ctrl_flows; /* Control flow rules. */
+	LIST_HEAD(counters, mlx5_flow_counter) flow_counters;
+	/* Flow counters. */
 	struct {
 		uint32_t dev_gen; /* Generation number to flush local caches. */
 		rte_rwlock_t rwlock; /* MR Lock. */
@@ -238,8 +253,14 @@ struct priv {
 	struct mlx5_dev_config config; /* Device configuration. */
 	struct mlx5_verbs_alloc_ctx verbs_alloc_ctx;
 	/* Context for Verbs allocator. */
-	int nl_socket; /* Netlink socket. */
+	int nl_socket_rdma; /* Netlink socket (NETLINK_RDMA). */
+	int nl_socket_route; /* Netlink socket (NETLINK_ROUTE). */
 	uint32_t nl_sn; /* Netlink message sequence number. */
+#ifndef RTE_ARCH_64
+	rte_spinlock_t uar_lock_cq; /* CQs share a common distinct UAR */
+	rte_spinlock_t uar_lock[MLX5_UAR_PAGE_NUM_MAX];
+	/* UAR same-page access control required in 32bit implementations. */
+#endif
     struct mlx5_stats_priv m_stats; /* TREX_PATCH */
 };
 
@@ -252,9 +273,12 @@ int mlx5_getenv_int(const char *);
 
 /* mlx5_ethdev.c */
 
+int mlx5_get_master_ifname(const struct rte_eth_dev *dev,
+			   char (*ifname)[IF_NAMESIZE]);
 int mlx5_get_ifname(const struct rte_eth_dev *dev, char (*ifname)[IF_NAMESIZE]);
 int mlx5_ifindex(const struct rte_eth_dev *dev);
-int mlx5_ifreq(const struct rte_eth_dev *dev, int req, struct ifreq *ifr);
+int mlx5_ifreq(const struct rte_eth_dev *dev, int req, struct ifreq *ifr,
+	       int master);
 int mlx5_get_mtu(struct rte_eth_dev *dev, uint16_t *mtu);
 int mlx5_set_flags(struct rte_eth_dev *dev, unsigned int keep,
 		   unsigned int flags);
@@ -279,6 +303,9 @@ int mlx5_set_link_up(struct rte_eth_dev *dev);
 int mlx5_is_removed(struct rte_eth_dev *dev);
 eth_tx_burst_t mlx5_select_tx_function(struct rte_eth_dev *dev);
 eth_rx_burst_t mlx5_select_rx_function(struct rte_eth_dev *dev);
+unsigned int mlx5_dev_to_port_id(const struct rte_device *dev,
+				 uint16_t *port_list,
+				 unsigned int port_list_n);
 
 /* mlx5_mac.c */
 
@@ -340,7 +367,8 @@ int mlx5_traffic_restart(struct rte_eth_dev *dev);
 
 /* mlx5_flow.c */
 
-unsigned int mlx5_get_max_verbs_prio(struct rte_eth_dev *dev);
+int mlx5_flow_discover_priorities(struct rte_eth_dev *dev);
+void mlx5_flow_print(struct rte_flow *flow);
 int mlx5_flow_validate(struct rte_eth_dev *dev,
 		       const struct rte_flow_attr *attr,
 		       const struct rte_flow_item items[],
@@ -387,7 +415,7 @@ int mlx5_socket_connect(struct rte_eth_dev *priv);
 
 /* mlx5_nl.c */
 
-int mlx5_nl_init(uint32_t nlgroups);
+int mlx5_nl_init(uint32_t nlgroups, int protocol);
 int mlx5_nl_mac_addr_add(struct rte_eth_dev *dev, struct ether_addr *mac,
 			 uint32_t index);
 int mlx5_nl_mac_addr_remove(struct rte_eth_dev *dev, struct ether_addr *mac,
@@ -396,5 +424,8 @@ void mlx5_nl_mac_addr_sync(struct rte_eth_dev *dev);
 void mlx5_nl_mac_addr_flush(struct rte_eth_dev *dev);
 int mlx5_nl_promisc(struct rte_eth_dev *dev, int enable);
 int mlx5_nl_allmulti(struct rte_eth_dev *dev, int enable);
+unsigned int mlx5_nl_ifindex(int nl, const char *name);
+int mlx5_nl_switch_info(int nl, unsigned int ifindex,
+			struct mlx5_switch_info *info);
 
 #endif /* RTE_PMD_MLX5_H_ */

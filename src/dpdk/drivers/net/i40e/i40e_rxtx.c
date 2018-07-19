@@ -1439,13 +1439,13 @@ i40e_prep_pkts(__rte_unused void *tx_queue, struct rte_mbuf **tx_pkts,
 
 		/* Check for m->nb_segs to not exceed the limits. */
 		if (!(ol_flags & PKT_TX_TCP_SEG)) {
-			if (m->nb_segs > I40E_TX_MAX_SEG ||
-			    m->nb_segs > I40E_TX_MAX_MTU_SEG) {
+			if (m->nb_segs > I40E_TX_MAX_MTU_SEG) {
 				rte_errno = -EINVAL;
 				return i;
 			}
-		} else if ((m->tso_segsz < I40E_MIN_TSO_MSS) ||
-				(m->tso_segsz > I40E_MAX_TSO_MSS)) {
+		} else if (m->nb_segs > I40E_TX_MAX_SEG ||
+			   m->tso_segsz < I40E_MIN_TSO_MSS ||
+			   m->tso_segsz > I40E_MAX_TSO_MSS) {
 			/* MSS outside the range (256B - 9674B) are considered
 			 * malicious
 			 */
@@ -1455,6 +1455,13 @@ i40e_prep_pkts(__rte_unused void *tx_queue, struct rte_mbuf **tx_pkts,
 
 		if (ol_flags & I40E_TX_OFFLOAD_NOTSUP_MASK) {
 			rte_errno = -ENOTSUP;
+			return i;
+		}
+
+		/* check the size of packet */
+		if (m->pkt_len > I40E_FRAME_SIZE_MAX ||
+		    m->pkt_len < I40E_TX_MIN_PKT_LEN) {
+			rte_errno = -EINVAL;
 			return i;
 		}
 
@@ -1835,8 +1842,10 @@ i40e_dev_rx_queue_setup(struct rte_eth_dev *dev,
 	rxq->queue_id = queue_idx;
 	rxq->reg_idx = reg_idx;
 	rxq->port_id = dev->data->port_id;
-	rxq->crc_len = (uint8_t)((dev->data->dev_conf.rxmode.offloads &
-			DEV_RX_OFFLOAD_CRC_STRIP) ? 0 : ETHER_CRC_LEN);
+	if (rte_eth_dev_must_keep_crc(dev->data->dev_conf.rxmode.offloads))
+		rxq->crc_len = ETHER_CRC_LEN;
+	else
+		rxq->crc_len = 0;
 	rxq->drop_en = rx_conf->rx_drop_en;
 	rxq->vsi = vsi;
 	rxq->rx_deferred_start = rx_conf->rx_deferred_start;

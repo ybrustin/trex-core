@@ -451,8 +451,10 @@ fm10k_dev_configure(struct rte_eth_dev *dev)
 
 	PMD_INIT_FUNC_TRACE();
 
-	if ((dev->data->dev_conf.rxmode.offloads &
-	     DEV_RX_OFFLOAD_CRC_STRIP) == 0)
+	/* KEEP_CRC offload flag is not supported by PMD
+	 * can remove the below block when DEV_RX_OFFLOAD_CRC_STRIP removed
+	 */
+	if (rte_eth_dev_must_keep_crc(dev->data->dev_conf.rxmode.offloads))
 		PMD_INIT_LOG(WARNING, "fm10k always strip CRC");
 
 	/* multipe queue mode checking */
@@ -2837,6 +2839,8 @@ static const struct eth_dev_ops fm10k_eth_dev_ops = {
 	.tx_queue_setup		= fm10k_tx_queue_setup,
 	.tx_queue_release	= fm10k_tx_queue_release,
 	.rx_descriptor_done	= fm10k_dev_rx_descriptor_done,
+	.rx_descriptor_status = fm10k_dev_rx_descriptor_status,
+	.tx_descriptor_status = fm10k_dev_tx_descriptor_status,
 	.rx_queue_intr_enable	= fm10k_dev_rx_queue_intr_enable,
 	.rx_queue_intr_disable	= fm10k_dev_rx_queue_intr_disable,
 	.reta_update		= fm10k_reta_update,
@@ -3290,9 +3294,7 @@ RTE_PMD_REGISTER_PCI(net_fm10k, rte_pmd_fm10k);
 RTE_PMD_REGISTER_PCI_TABLE(net_fm10k, pci_id_fm10k_map);
 RTE_PMD_REGISTER_KMOD_DEP(net_fm10k, "* igb_uio | uio_pci_generic | vfio-pci");
 
-RTE_INIT(fm10k_init_log);
-static void
-fm10k_init_log(void)
+RTE_INIT(fm10k_init_log)
 {
 	fm10k_logtype_init = rte_log_register("pmd.net.fm10k.init");
 	if (fm10k_logtype_init >= 0)

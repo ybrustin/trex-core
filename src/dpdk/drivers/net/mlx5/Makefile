@@ -100,7 +100,7 @@ mlx5_autoconf.h.new: $(RTE_SDK)/buildtools/auto-config-h.sh
 	$Q sh -- '$<' '$@' \
 		HAVE_IBV_DEVICE_STRIDING_RQ_SUPPORT \
 		infiniband/mlx5dv.h \
-		enum MLX5DV_CONTEXT_MASK_STRIDING_RQ \
+		enum MLX5DV_CQE_RES_FORMAT_CSUM_STRIDX \
 		$(AUTOCONF_OUTPUT)
 	$Q sh -- '$<' '$@' \
 		HAVE_IBV_DEVICE_TUNNEL_SUPPORT \
@@ -150,7 +150,52 @@ mlx5_autoconf.h.new: $(RTE_SDK)/buildtools/auto-config-h.sh
 	$Q sh -- '$<' '$@' \
 		HAVE_IBV_DEVICE_COUNTERS_SET_SUPPORT \
 		infiniband/verbs.h \
-		enum IBV_FLOW_SPEC_ACTION_COUNT \
+		type 'struct ibv_counter_set_init_attr' \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NL_NLDEV \
+		rdma/rdma_netlink.h \
+		enum RDMA_NL_NLDEV \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_CMD_GET \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_CMD_GET \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_CMD_PORT_GET \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_CMD_PORT_GET \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_ATTR_DEV_INDEX \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_ATTR_DEV_INDEX \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_ATTR_DEV_NAME \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_ATTR_DEV_NAME \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_ATTR_PORT_INDEX \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_ATTR_PORT_INDEX \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_RDMA_NLDEV_ATTR_NDEV_INDEX \
+		rdma/rdma_netlink.h \
+		enum RDMA_NLDEV_ATTR_NDEV_INDEX \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_IFLA_PHYS_SWITCH_ID \
+		linux/if_link.h \
+		enum IFLA_PHYS_SWITCH_ID \
+		$(AUTOCONF_OUTPUT)
+	$Q sh -- '$<' '$@' \
+		HAVE_IFLA_PHYS_PORT_NAME \
+		linux/if_link.h \
+		enum IFLA_PHYS_PORT_NAME \
 		$(AUTOCONF_OUTPUT)
 
 # Create mlx5_autoconf.h or update it in case it differs from the new one.

@@ -698,12 +698,16 @@ i40e_write_global_rx_ctl(struct i40e_hw *hw, uint32_t reg_addr,
 			 uint32_t reg_val)
 {
 	uint32_t ori_reg_val;
+	struct rte_eth_dev *dev;
 
 	ori_reg_val = i40e_read_rx_ctl(hw, reg_addr);
+	dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 	i40e_write_rx_ctl(hw, reg_addr, reg_val);
-	PMD_DRV_LOG(DEBUG,
-		    "Global register [0x%08x] original: 0x%08x, after: 0x%08x",
-		    reg_addr, ori_reg_val, reg_val);
+	if (ori_reg_val != reg_val)
+		PMD_DRV_LOG(WARNING,
+			    "i40e device %s changed global register [0x%08x]."
+			    " original: 0x%08x, new: 0x%08x",
+			    dev->device->name, reg_addr, ori_reg_val, reg_val);
 }
 
 RTE_PMD_REGISTER_PCI(net_i40e, rte_i40e_pmd);
@@ -730,7 +734,6 @@ static inline void i40e_GLQF_reg_init(struct i40e_hw *hw)
 	 */
 	I40E_WRITE_GLB_REG(hw, I40E_GLQF_ORT(40), 0x00000029);
 	I40E_WRITE_GLB_REG(hw, I40E_GLQF_PIT(9), 0x00009420);
-	i40e_global_cfg_warning(I40E_WARNING_QINQ_PARSER);
 }
 
 static inline void i40e_config_automask(struct i40e_pf *pf)
@@ -1165,6 +1168,7 @@ i40e_aq_debug_write_global_register(struct i40e_hw *hw,
 				    struct i40e_asq_cmd_details *cmd_details)
 {
 	uint64_t ori_reg_val;
+	struct rte_eth_dev *dev;
 	int ret;
 
 	ret = i40e_aq_debug_read_register(hw, reg_addr, &ori_reg_val, NULL);
@@ -1174,11 +1178,13 @@ i40e_aq_debug_write_global_register(struct i40e_hw *hw,
 			    reg_addr);
 		return -EIO;
 	}
+	dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 
-	PMD_DRV_LOG(DEBUG,
-		    "Global register [0x%08x] original: 0x%"PRIx64
-		    ", after: 0x%"PRIx64,
-		    reg_addr, ori_reg_val, reg_val);
+	if (ori_reg_val != reg_val)
+		PMD_DRV_LOG(WARNING,
+			    "i40e device %s changed global register [0x%08x]."
+			    " original: 0x%"PRIx64", after: 0x%"PRIx64,
+			    dev->device->name, reg_addr, ori_reg_val, reg_val);
 
 	return i40e_aq_debug_write_register(hw, reg_addr, reg_val, cmd_details);
 }
@@ -1299,7 +1305,6 @@ eth_i40e_dev_init(struct rte_eth_dev *dev, void *init_params __rte_unused)
 		PMD_INIT_LOG(DEBUG,
 			     "Global register 0x%08x is changed with 0x28",
 			     I40E_GLQF_L3_MAP(40));
-		i40e_global_cfg_warning(I40E_WARNING_QINQ_CLOUD_FILTER);
 	}
 
 	/* Need the special FW version to support floating VEB */
@@ -1586,7 +1591,6 @@ void i40e_flex_payload_reg_set_default(struct i40e_hw *hw)
 	I40E_WRITE_GLB_REG(hw, I40E_GLQF_ORT(33), 0x00000000);
 	I40E_WRITE_GLB_REG(hw, I40E_GLQF_ORT(34), 0x00000000);
 	I40E_WRITE_GLB_REG(hw, I40E_GLQF_ORT(35), 0x00000000);
-	i40e_global_cfg_warning(I40E_WARNING_DIS_FLX_PLD);
 }
 
 static int
@@ -1841,8 +1845,7 @@ __vsi_queues_bind_intr(struct i40e_vsi *vsi, uint16_t msix_vect,
 	/* Write first RX queue to Link list register as the head element */
 	if (vsi->type != I40E_VSI_SRIOV) {
 		uint16_t interval =
-			i40e_calc_itr_interval(RTE_LIBRTE_I40E_ITR_INTERVAL, 1,
-					       pf->support_multi_driver);
+			i40e_calc_itr_interval(1, pf->support_multi_driver);
 
 		if (msix_vect == I40E_MISC_VEC_ID) {
 			I40E_WRITE_REG(hw, I40E_PFINT_LNKLST0,
@@ -2077,8 +2080,8 @@ i40e_phy_conf_link(struct i40e_hw *hw,
 
 
 
-	/* To enable link, phy_type mask needs to include each type */
-	for (cnt = I40E_PHY_TYPE_SGMII; cnt < I40E_PHY_TYPE_MAX; cnt++)
+	/* PHY type mask needs to include each type except PHY type extension */
+	for (cnt = I40E_PHY_TYPE_SGMII; cnt < I40E_PHY_TYPE_25GBASE_KR; cnt++)
 		phy_type_mask |= 1 << cnt;
 
 	/* use get_phy_abilities_resp value for the rest */
@@ -3353,10 +3356,11 @@ i40e_dev_info_get(struct rte_eth_dev *dev, struct rte_eth_dev_info *dev_info)
 		DEV_RX_OFFLOAD_TCP_CKSUM |
 		DEV_RX_OFFLOAD_OUTER_IPV4_CKSUM |
 		DEV_RX_OFFLOAD_CRC_STRIP |
+		DEV_RX_OFFLOAD_KEEP_CRC |
 		DEV_RX_OFFLOAD_VLAN_EXTEND |
 		DEV_RX_OFFLOAD_VLAN_FILTER |
 #ifdef TREX_PATCH
-                DEV_RX_OFFLOAD_SCATTER |
+        DEV_RX_OFFLOAD_SCATTER |
 #endif
 		DEV_RX_OFFLOAD_JUMBO_FRAME;
 
@@ -3529,8 +3533,6 @@ i40e_vlan_tpid_set_by_registers(struct rte_eth_dev *dev,
 	PMD_DRV_LOG(DEBUG,
 		    "Global register 0x%08x is changed with value 0x%08x",
 		    I40E_GL_SWT_L2TAGCTRL(reg_id), (uint32_t)reg_w);
-
-	i40e_global_cfg_warning(I40E_WARNING_TPID);
 
 	return 0;
 }
@@ -3826,7 +3828,6 @@ i40e_flow_ctrl_set(struct rte_eth_dev *dev, struct rte_eth_fc_conf *fc_conf)
 		I40E_WRITE_GLB_REG(hw, I40E_GLRPB_GLW,
 				   pf->fc_conf.low_water[I40E_MAX_TRAFFIC_CLASS]
 				   << I40E_KILOSHIFT);
-		i40e_global_cfg_warning(I40E_WARNING_FLOW_CTL);
 	} else {
 		PMD_DRV_LOG(ERR,
 			    "Water marker configuration is not supported.");
@@ -7659,6 +7660,7 @@ i40e_status_code i40e_replace_mpls_l1_filter(struct i40e_pf *pf)
 	struct i40e_aqc_replace_cloud_filters_cmd  filter_replace;
 	struct i40e_aqc_replace_cloud_filters_cmd_buf  filter_replace_buf;
 	struct i40e_hw *hw = I40E_PF_TO_HW(pf);
+	struct rte_eth_dev *dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 	enum i40e_status_code status = I40E_SUCCESS;
 
 	if (pf->support_multi_driver) {
@@ -7702,13 +7704,14 @@ i40e_status_code i40e_replace_mpls_l1_filter(struct i40e_pf *pf)
 
 	status = i40e_aq_replace_cloud_filters(hw, &filter_replace,
 					       &filter_replace_buf);
-	if (!status) {
-		i40e_global_cfg_warning(I40E_WARNING_RPL_CLD_FILTER);
-		PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-			    "cloud l1 type is changed from 0x%x to 0x%x",
+	if (!status && (filter_replace.old_filter_type !=
+			filter_replace.new_filter_type))
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud l1 type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
 			    filter_replace.old_filter_type,
 			    filter_replace.new_filter_type);
-	}
+
 	return status;
 }
 
@@ -7718,6 +7721,7 @@ i40e_status_code i40e_replace_mpls_cloud_filter(struct i40e_pf *pf)
 	struct i40e_aqc_replace_cloud_filters_cmd  filter_replace;
 	struct i40e_aqc_replace_cloud_filters_cmd_buf  filter_replace_buf;
 	struct i40e_hw *hw = I40E_PF_TO_HW(pf);
+	struct rte_eth_dev *dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 	enum i40e_status_code status = I40E_SUCCESS;
 
 	if (pf->support_multi_driver) {
@@ -7746,10 +7750,13 @@ i40e_status_code i40e_replace_mpls_cloud_filter(struct i40e_pf *pf)
 					       &filter_replace_buf);
 	if (status < 0)
 		return status;
-	PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-		    "cloud filter type is changed from 0x%x to 0x%x",
-		    filter_replace.old_filter_type,
-		    filter_replace.new_filter_type);
+	if (filter_replace.old_filter_type !=
+	    filter_replace.new_filter_type)
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud filter type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
+			    filter_replace.old_filter_type,
+			    filter_replace.new_filter_type);
 
 	/* For MPLSoGRE */
 	memset(&filter_replace, 0,
@@ -7772,13 +7779,14 @@ i40e_status_code i40e_replace_mpls_cloud_filter(struct i40e_pf *pf)
 
 	status = i40e_aq_replace_cloud_filters(hw, &filter_replace,
 					       &filter_replace_buf);
-	if (!status) {
-		i40e_global_cfg_warning(I40E_WARNING_RPL_CLD_FILTER);
-		PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-			    "cloud filter type is changed from 0x%x to 0x%x",
+	if (!status && (filter_replace.old_filter_type !=
+			filter_replace.new_filter_type))
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud filter type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
 			    filter_replace.old_filter_type,
 			    filter_replace.new_filter_type);
-	}
+
 	return status;
 }
 
@@ -7788,6 +7796,7 @@ i40e_replace_gtp_l1_filter(struct i40e_pf *pf)
 	struct i40e_aqc_replace_cloud_filters_cmd  filter_replace;
 	struct i40e_aqc_replace_cloud_filters_cmd_buf  filter_replace_buf;
 	struct i40e_hw *hw = I40E_PF_TO_HW(pf);
+	struct rte_eth_dev *dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 	enum i40e_status_code status = I40E_SUCCESS;
 
 	if (pf->support_multi_driver) {
@@ -7823,10 +7832,13 @@ i40e_replace_gtp_l1_filter(struct i40e_pf *pf)
 					       &filter_replace_buf);
 	if (status < 0)
 		return status;
-	PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-		    "cloud l1 type is changed from 0x%x to 0x%x",
-		    filter_replace.old_filter_type,
-		    filter_replace.new_filter_type);
+	if (filter_replace.old_filter_type !=
+	    filter_replace.new_filter_type)
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud l1 type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
+			    filter_replace.old_filter_type,
+			    filter_replace.new_filter_type);
 
 	/* for GTP-U */
 	memset(&filter_replace, 0,
@@ -7855,13 +7867,14 @@ i40e_replace_gtp_l1_filter(struct i40e_pf *pf)
 
 	status = i40e_aq_replace_cloud_filters(hw, &filter_replace,
 					       &filter_replace_buf);
-	if (!status) {
-		i40e_global_cfg_warning(I40E_WARNING_RPL_CLD_FILTER);
-		PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-			    "cloud l1 type is changed from 0x%x to 0x%x",
+	if (!status && (filter_replace.old_filter_type !=
+			filter_replace.new_filter_type))
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud l1 type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
 			    filter_replace.old_filter_type,
 			    filter_replace.new_filter_type);
-	}
+
 	return status;
 }
 
@@ -7871,6 +7884,7 @@ i40e_status_code i40e_replace_gtp_cloud_filter(struct i40e_pf *pf)
 	struct i40e_aqc_replace_cloud_filters_cmd  filter_replace;
 	struct i40e_aqc_replace_cloud_filters_cmd_buf  filter_replace_buf;
 	struct i40e_hw *hw = I40E_PF_TO_HW(pf);
+	struct rte_eth_dev *dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 	enum i40e_status_code status = I40E_SUCCESS;
 
 	if (pf->support_multi_driver) {
@@ -7898,10 +7912,13 @@ i40e_status_code i40e_replace_gtp_cloud_filter(struct i40e_pf *pf)
 					       &filter_replace_buf);
 	if (status < 0)
 		return status;
-	PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-		    "cloud filter type is changed from 0x%x to 0x%x",
-		    filter_replace.old_filter_type,
-		    filter_replace.new_filter_type);
+	if (filter_replace.old_filter_type !=
+	    filter_replace.new_filter_type)
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud filter type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
+			    filter_replace.old_filter_type,
+			    filter_replace.new_filter_type);
 
 	/* for GTP-U */
 	memset(&filter_replace, 0,
@@ -7923,13 +7940,14 @@ i40e_status_code i40e_replace_gtp_cloud_filter(struct i40e_pf *pf)
 
 	status = i40e_aq_replace_cloud_filters(hw, &filter_replace,
 					       &filter_replace_buf);
-	if (!status) {
-		i40e_global_cfg_warning(I40E_WARNING_RPL_CLD_FILTER);
-		PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-			    "cloud filter type is changed from 0x%x to 0x%x",
+	if (!status && (filter_replace.old_filter_type !=
+			filter_replace.new_filter_type))
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud filter type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
 			    filter_replace.old_filter_type,
 			    filter_replace.new_filter_type);
-	}
+
 	return status;
 }
 
@@ -8489,7 +8507,6 @@ i40e_dev_set_gre_key_len(struct i40e_hw *hw, uint8_t len)
 		PMD_DRV_LOG(DEBUG, "Global register 0x%08x is changed "
 			    "with value 0x%08x",
 			    I40E_GL_PRS_FVBM(2), reg);
-		i40e_global_cfg_warning(I40E_WARNING_GRE_KEY_LEN);
 	} else {
 		ret = 0;
 	}
@@ -8755,7 +8772,6 @@ i40e_set_hash_filter_global_config(struct i40e_hw *hw,
 							  I40E_GLQF_HSYM(j),
 							  reg);
 			}
-			i40e_global_cfg_warning(I40E_WARNING_HSYM);
 		}
 	}
 
@@ -8781,7 +8797,6 @@ i40e_set_hash_filter_global_config(struct i40e_hw *hw,
 		goto out;
 
 	i40e_write_global_rx_ctl(hw, I40E_GLQF_CTL, reg);
-	i40e_global_cfg_warning(I40E_WARNING_QF_CTL);
 
 out:
 	I40E_WRITE_FLUSH(hw);
@@ -9374,12 +9389,17 @@ void
 i40e_check_write_global_reg(struct i40e_hw *hw, uint32_t addr, uint32_t val)
 {
 	uint32_t reg = i40e_read_rx_ctl(hw, addr);
+	struct rte_eth_dev *dev;
 
-	if (reg != val)
+	dev = ((struct i40e_adapter *)hw->back)->eth_dev;
+	if (reg != val) {
 		i40e_write_rx_ctl(hw, addr, val);
-	PMD_DRV_LOG(DEBUG,
-		    "Global register [0x%08x] original: 0x%08x, after: 0x%08x",
-		    addr, reg, (uint32_t)i40e_read_rx_ctl(hw, addr));
+		PMD_DRV_LOG(WARNING,
+			    "i40e device %s changed global register [0x%08x]."
+			    " original: 0x%08x, new: 0x%08x",
+			    dev->device->name, addr, reg,
+			    (uint32_t)i40e_read_rx_ctl(hw, addr));
+	}
 }
 
 static void
@@ -9453,12 +9473,6 @@ i40e_filter_input_set_init(struct i40e_pf *pf)
 			pf->hash_input_set[pctype] = input_set;
 		pf->fdir.input_set[pctype] = input_set;
 	}
-
-	if (!pf->support_multi_driver) {
-		i40e_global_cfg_warning(I40E_WARNING_HASH_INSET);
-		i40e_global_cfg_warning(I40E_WARNING_FD_MSK);
-		i40e_global_cfg_warning(I40E_WARNING_HASH_MSK);
-	}
 }
 
 int
@@ -9524,7 +9538,6 @@ i40e_hash_filter_inset_select(struct i40e_hw *hw,
 	i40e_check_write_global_reg(hw, I40E_GLQF_HASH_INSET(1, pctype),
 				    (uint32_t)((inset_reg >>
 				    I40E_32_BIT_WIDTH) & UINT32_MAX));
-	i40e_global_cfg_warning(I40E_WARNING_HASH_INSET);
 
 	for (i = 0; i < num; i++)
 		i40e_check_write_global_reg(hw, I40E_GLQF_HASH_MSK(i, pctype),
@@ -9533,7 +9546,6 @@ i40e_hash_filter_inset_select(struct i40e_hw *hw,
 	for (i = num; i < I40E_INSET_MASK_NUM_REG; i++)
 		i40e_check_write_global_reg(hw, I40E_GLQF_HASH_MSK(i, pctype),
 					    0);
-	i40e_global_cfg_warning(I40E_WARNING_HASH_MSK);
 	I40E_WRITE_FLUSH(hw);
 
 	pf->hash_input_set[pctype] = input_set;
@@ -9614,7 +9626,6 @@ i40e_fdir_filter_inset_select(struct i40e_pf *pf,
 			i40e_check_write_global_reg(hw,
 						    I40E_GLQF_FD_MSK(i, pctype),
 						    0);
-		i40e_global_cfg_warning(I40E_WARNING_FD_MSK);
 	} else {
 		PMD_DRV_LOG(ERR, "FDIR bit mask is not supported.");
 	}
@@ -10097,6 +10108,60 @@ i40e_pctype_to_flowtype(const struct i40e_adapter *adapter,
 #define I40E_GL_SWR_PM_UP_THR_SF_VALUE   0x06060606
 #define I40E_GL_SWR_PM_UP_THR            0x269FBC
 
+/*
+ * GL_SWR_PM_UP_THR:
+ * The value is not impacted from the link speed, its value is set according
+ * to the total number of ports for a better pipe-monitor configuration.
+ */
+static bool
+i40e_get_swr_pm_cfg(struct i40e_hw *hw, uint32_t *value)
+{
+#define I40E_GL_SWR_PM_EF_DEVICE(dev) \
+		.device_id = (dev),   \
+		.val = I40E_GL_SWR_PM_UP_THR_EF_VALUE
+
+#define I40E_GL_SWR_PM_SF_DEVICE(dev) \
+		.device_id = (dev),   \
+		.val = I40E_GL_SWR_PM_UP_THR_SF_VALUE
+
+	static const struct {
+		uint16_t device_id;
+		uint32_t val;
+	} swr_pm_table[] = {
+		{ I40E_GL_SWR_PM_EF_DEVICE(I40E_DEV_ID_SFP_XL710) },
+		{ I40E_GL_SWR_PM_EF_DEVICE(I40E_DEV_ID_KX_C) },
+		{ I40E_GL_SWR_PM_EF_DEVICE(I40E_DEV_ID_10G_BASE_T) },
+		{ I40E_GL_SWR_PM_EF_DEVICE(I40E_DEV_ID_10G_BASE_T4) },
+
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_KX_B) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_QSFP_A) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_QSFP_B) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_20G_KR2) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_20G_KR2_A) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_25G_B) },
+		{ I40E_GL_SWR_PM_SF_DEVICE(I40E_DEV_ID_25G_SFP28) },
+	};
+	uint32_t i;
+
+	if (value == NULL) {
+		PMD_DRV_LOG(ERR, "value is NULL");
+		return false;
+	}
+
+	for (i = 0; i < RTE_DIM(swr_pm_table); i++) {
+		if (hw->device_id == swr_pm_table[i].device_id) {
+			*value = swr_pm_table[i].val;
+
+			PMD_DRV_LOG(DEBUG, "Device 0x%x with GL_SWR_PM_UP_THR "
+				    "value - 0x%08x",
+				    hw->device_id, *value);
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int
 i40e_dev_sync_phy_type(struct i40e_hw *hw)
 {
@@ -10161,13 +10226,16 @@ i40e_configure_registers(struct i40e_hw *hw)
 		}
 
 		if (reg_table[i].addr == I40E_GL_SWR_PM_UP_THR) {
-			if (I40E_PHY_TYPE_SUPPORT_40G(hw->phy.phy_types) || /* For XL710 */
-			    I40E_PHY_TYPE_SUPPORT_25G(hw->phy.phy_types)) /* For XXV710 */
-				reg_table[i].val =
-					I40E_GL_SWR_PM_UP_THR_SF_VALUE;
-			else /* For X710 */
-				reg_table[i].val =
-					I40E_GL_SWR_PM_UP_THR_EF_VALUE;
+			uint32_t cfg_val;
+
+			if (!i40e_get_swr_pm_cfg(hw, &cfg_val)) {
+				PMD_DRV_LOG(DEBUG, "Device 0x%x skips "
+					    "GL_SWR_PM_UP_THR value fixup",
+					    hw->device_id);
+				continue;
+			}
+
+			reg_table[i].val = cfg_val;
 		}
 
 		ret = i40e_aq_debug_read_register(hw, reg_table[i].addr,
@@ -12329,6 +12397,7 @@ i40e_cloud_filter_qinq_create(struct i40e_pf *pf)
 	struct i40e_aqc_replace_cloud_filters_cmd  filter_replace;
 	struct i40e_aqc_replace_cloud_filters_cmd_buf  filter_replace_buf;
 	struct i40e_hw *hw = I40E_PF_TO_HW(pf);
+	struct rte_eth_dev *dev = ((struct i40e_adapter *)hw->back)->eth_dev;
 
 	if (pf->support_multi_driver) {
 		PMD_DRV_LOG(ERR, "Replace cloud filter is not supported.");
@@ -12365,10 +12434,14 @@ i40e_cloud_filter_qinq_create(struct i40e_pf *pf)
 			&filter_replace_buf);
 	if (ret != I40E_SUCCESS)
 		return ret;
-	PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-		    "cloud l1 type is changed from 0x%x to 0x%x",
-		    filter_replace.old_filter_type,
-		    filter_replace.new_filter_type);
+
+	if (filter_replace.old_filter_type !=
+	    filter_replace.new_filter_type)
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud l1 type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
+			    filter_replace.old_filter_type,
+			    filter_replace.new_filter_type);
 
 	/* Apply the second L2 cloud filter */
 	memset(&filter_replace, 0,
@@ -12390,13 +12463,14 @@ i40e_cloud_filter_qinq_create(struct i40e_pf *pf)
 		I40E_AQC_REPLACE_CLOUD_CMD_INPUT_VALIDATED;
 	ret = i40e_aq_replace_cloud_filters(hw, &filter_replace,
 			&filter_replace_buf);
-	if (!ret) {
-		i40e_global_cfg_warning(I40E_WARNING_RPL_CLD_FILTER);
-		PMD_DRV_LOG(DEBUG, "Global configuration modification: "
-			    "cloud filter type is changed from 0x%x to 0x%x",
+	if (!ret && (filter_replace.old_filter_type !=
+		     filter_replace.new_filter_type))
+		PMD_DRV_LOG(WARNING, "i40e device %s changed cloud filter type."
+			    " original: 0x%x, new: 0x%x",
+			    dev->device->name,
 			    filter_replace.old_filter_type,
 			    filter_replace.new_filter_type);
-	}
+
 	return ret;
 }
 
@@ -12514,9 +12588,7 @@ i40e_config_rss_filter(struct i40e_pf *pf,
 	return 0;
 }
 
-RTE_INIT(i40e_init_log);
-static void
-i40e_init_log(void)
+RTE_INIT(i40e_init_log)
 {
 	i40e_logtype_init = rte_log_register("pmd.net.i40e.init");
 	if (i40e_logtype_init >= 0)

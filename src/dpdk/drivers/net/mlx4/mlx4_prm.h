@@ -40,6 +40,7 @@
 /* Work queue element (WQE) flags. */
 #define MLX4_WQE_CTRL_IIP_HDR_CSUM (1 << 28)
 #define MLX4_WQE_CTRL_IL4_HDR_CSUM (1 << 27)
+#define MLX4_WQE_CTRL_RR (1 << 6)
 
 /* CQE checksum flags. */
 enum {
@@ -51,6 +52,7 @@ enum {
 };
 
 /* CQE status flags. */
+#define MLX4_CQE_STATUS_IPV6F (1 << 12)
 #define MLX4_CQE_STATUS_IPV4 (1 << 22)
 #define MLX4_CQE_STATUS_IPV4F (1 << 23)
 #define MLX4_CQE_STATUS_IPV6 (1 << 24)
@@ -96,6 +98,19 @@ struct mlx4_cq {
 	uint32_t cqn; /**< CQ number. */
 	int arm_sn; /**< Rx event counter. */
 };
+
+#ifndef HAVE_IBV_MLX4_WQE_LSO_SEG
+/*
+ * WQE LSO segment structure.
+ * Defined here as backward compatibility for rdma-core v17 and below.
+ * Similar definition is found in infiniband/mlx4dv.h in rdma-core v18
+ * and above.
+ */
+struct mlx4_wqe_lso_seg {
+	rte_be32_t mss_hdr_size;
+	rte_be32_t header[];
+};
+#endif
 
 /**
  * Retrieve a CQE entry from a CQ.

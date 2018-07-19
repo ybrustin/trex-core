@@ -1941,10 +1941,8 @@ public:
         m_tx_conf.tx_thresh.pthresh = TX_PTHRESH;
         m_tx_conf.tx_thresh.hthresh = TX_HTHRESH;
         m_tx_conf.tx_thresh.wthresh = TX_WTHRESH;
-        m_tx_conf.txq_flags         = ETH_TXQ_FLAGS_IGNORE;
 
         m_port_conf.rxmode.max_rx_pkt_len = 9*1024+22;
-        m_port_conf.rxmode.ignore_offload_bitfield = 1;
         m_port_conf.rxmode.offloads |= ( DEV_RX_OFFLOAD_JUMBO_FRAME
                                        | DEV_RX_OFFLOAD_CRC_STRIP
                                        | DEV_RX_OFFLOAD_SCATTER );
@@ -4138,7 +4136,16 @@ void CGlobalTRex::pre_test() {
 }
 
 void CGlobalTRex::apply_pretest_results_to_stack(void) {
+    // wait up to 5 secongs for RX core to be up
+    for (int i=0; i<50; i++) {
+        if ( m_stx->get_rx()->is_active() ) {
+            break;
+        }
+        delay(100);
+    }
+
     assert(m_stx->get_rx()->is_active());
+
     for (int port_id = 0; port_id < m_max_ports; port_id++) {
         if ( m_ports[port_id]->is_dummy() ) {
             continue;

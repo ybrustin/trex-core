@@ -305,6 +305,7 @@ eth_dev_info(struct rte_eth_dev *dev,
 	dev_info->min_rx_bufsize = 0;
 	dev_info->reta_size = internals->reta_size;
 	dev_info->flow_type_rss_offloads = internals->flow_type_rss_offloads;
+	dev_info->rx_offload_capa = DEV_RX_OFFLOAD_CRC_STRIP;
 }
 
 static int
@@ -697,9 +698,7 @@ RTE_PMD_REGISTER_PARAM_STRING(net_null,
 	"size=<int> "
 	"copy=<int>");
 
-RTE_INIT(eth_null_init_log);
-static void
-eth_null_init_log(void)
+RTE_INIT(eth_null_init_log)
 {
 	eth_null_logtype = rte_log_register("pmd.net.null");
 	if (eth_null_logtype >= 0)
