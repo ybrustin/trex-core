@@ -279,5 +279,6 @@ class CGlobalTRexInterface  {
 };
 
 bool fill_pci_dev(struct rte_eth_dev_info *dev_info, struct rte_pci_device* pci_dev);
+void wait_x_sec(int sec);
 
 #endif
