@@ -11300,6 +11300,12 @@ i40e_dcb_init_configure(struct rte_eth_dev *dev, bool sw_dcb)
 		return -ENOTSUP;
 	}
 
+	/* DCB initialization:
+	 * Update DCB configuration from the Firmware and configure
+	 * LLDP MIB change event.
+	 */
+	if (sw_dcb == TRUE) {
+
 #ifdef TREX_PATCH
         // return removed in DPDK 17.02 disable of lldp
 		ret = i40e_aq_stop_lldp(hw, TRUE, NULL);
@@ -11307,11 +11313,6 @@ i40e_dcb_init_configure(struct rte_eth_dev *dev, bool sw_dcb)
 			PMD_INIT_LOG(DEBUG, "Failed to stop lldp");
 #endif
 
-	/* DCB initialization:
-	 * Update DCB configuration from the Firmware and configure
-	 * LLDP MIB change event.
-	 */
-	if (sw_dcb == TRUE) {
 		ret = i40e_init_dcb(hw);
 		/* If lldp agent is stopped, the return value from
 		 * i40e_init_dcb we expect is failure with I40E_AQ_RC_EPERM
