@@ -102,6 +102,7 @@ extern "C" {
 #include "trex_watchdog.h"
 #include "utl_port_map.h"
 #include "astf/astf_db.h"
+#include "utl_offloads.h"
 
 #define MAX_PKT_BURST   32
 
@@ -5267,15 +5268,15 @@ void CPhyEthIF::conf_queues() {
         }
 
         if (!rte_eth_dev_filter_supported(m_repid, RTE_ETH_FILTER_HASH)) {
-                // Setup HW touse the TOEPLITZ hash function as an RSS hash function
-                struct rte_eth_hash_filter_info info = {};
-                info.info_type = RTE_ETH_HASH_FILTER_GLOBAL_CONFIG;
-                info.info.global_conf.hash_func = RTE_ETH_HASH_FUNCTION_TOEPLITZ;
-                if (rte_eth_dev_filter_ctrl(m_repid, RTE_ETH_FILTER_HASH,
-                                            RTE_ETH_FILTER_SET, &info) < 0) {
+            // Setup HW to use the TOEPLITZ hash function as an RSS hash function
+            struct rte_eth_hash_filter_info info = {};
+            info.info_type = RTE_ETH_HASH_FILTER_GLOBAL_CONFIG;
+            info.info.global_conf.hash_func = RTE_ETH_HASH_FUNCTION_TOEPLITZ;
+            if (rte_eth_dev_filter_ctrl(m_repid, RTE_ETH_FILTER_HASH,
+                                        RTE_ETH_FILTER_SET, &info) < 0) {
                 printf(" ERROR cannot set hash function on a port %d \n",m_repid);
                 exit(1);
-                }
+            }
         }
         /* set reta_mask, for now it is ok to set one value to all ports */
         uint8_t reta_mask=(uint8_t)(min(dev_info->reta_size,(uint16_t)256)-1);
@@ -5302,6 +5303,7 @@ void CPhyEthIF::conf_queues() {
     // disable non-supported tx port offloads
     g_trex.m_port_cfg.m_port_conf.txmode.offloads &= dev_info->tx_offload_capa;
 
+    check_offloads(dev_info, &g_trex.m_port_cfg.m_port_conf);
     configure(dpdk_p.rx_drop_q_num + dpdk_p.rx_data_q_num, num_tx_q, &g_trex.m_port_cfg.m_port_conf);
 
     for (uint16_t qid = 0; qid < num_tx_q; qid++) {

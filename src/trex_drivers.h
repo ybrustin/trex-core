@@ -1,3 +1,6 @@
+#ifndef TREX_DRIVERS_H
+#define TREX_DRIVERS_H
+
 /*
   Hanoh Haim
   Cisco Systems, Inc.
@@ -841,4 +844,4 @@ static CTRexExtendedDriverBase * get_ex_drv(){
 }
 
 
-
+#endif /* TREX_DRIVERS_H */

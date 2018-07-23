@@ -338,18 +338,12 @@ main_src = SrcGroup(dir='src',
              '44bsd/udp.cpp',
 
              'bp_sim_tcp.cpp',
-             'utl_mbuf.cpp',
-             'utl_dbl_human.cpp',
-             'utl_counter.cpp',
-             'utl_policer.cpp',
              'astf/astf_template_db.cpp',
              'stt_cp.cpp',
              'trex_global.cpp',
              'bp_sim.cpp',
              'trex_platform.cpp',
              'flow_stat_parser.cpp',
-             'utl_term_io.cpp',
-             'utl_port_map.cpp',
              'global_io_mode.cpp',
              'main_dpdk.cpp',
              'dpdk_port_map.cpp',
@@ -368,9 +362,6 @@ main_src = SrcGroup(dir='src',
              'timer_wheel_pq.cpp',
              'time_histogram.cpp',
              'os_time.cpp',
-             'utl_cpuu.cpp',
-             'utl_ip.cpp',
-             'utl_yaml.cpp',
              'nat_check.cpp',
              'nat_check_flow_table.cpp',
              'msg_manager.cpp',
@@ -385,9 +376,20 @@ main_src = SrcGroup(dir='src',
              'astf/astf_db.cpp',
              'astf/astf_json_validator.cpp',
              'bp_sim_stf.cpp',
-             'utl_sync_barrier.cpp',
              'trex_build_info.cpp',
-             'dpdk_drv_filter.cpp'
+             'dpdk_drv_filter.cpp',
+
+             'utils/utl_counter.cpp',
+             'utils/utl_cpuu.cpp',
+             'utils/utl_dbl_human.cpp',
+             'utils/utl_ip.cpp',
+             'utils/utl_mbuf.cpp',
+             'utils/utl_offloads.cpp',
+             'utils/utl_policer.cpp',
+             'utils/utl_port_map.cpp',
+             'utils/utl_sync_barrier.cpp',
+             'utils/utl_term_io.cpp',
+             'utils/utl_yaml.cpp',
              ]);
 
 cmn_src = SrcGroup(dir='src/common',
@@ -1033,6 +1035,7 @@ includes_path = '''
                    ../src/pal/linux_dpdk/
                    ../src/stx/
                    ../src/stx/common/
+                   ../src/utils/
                    ../external_libs/yaml-cpp/include/
                    ../external_libs/zmq-''' + march + '''/include/
                    ../external_libs/json/
@@ -1572,7 +1575,7 @@ files_list=[
             'daemon_server'
             ];
 
-files_dir=['cap2','avl','cfg','ko','automation', 'external_libs', 'python-lib','stl','exp','astf']
+files_dir=['cap2','avl','cfg','ko','automation', 'external_libs', 'python-lib','stl','exp','astf', 'utils']
 
 
 class Env(object):
